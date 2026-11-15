@@ -13,7 +13,6 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-
 knitr::opts_chunk$set(
   echo = TRUE,
   warning = FALSE,
@@ -22,7 +21,6 @@ knitr::opts_chunk$set(
   fig.height = 6,
   dpi = 300
 )
-
 # Identify the project root automatically
 candidate_roots <- unique(
   normalizePath(
@@ -51,16 +49,20 @@ if (length(valid_roots) == 0) {
 }
 
 project_root <- valid_roots[1]
-
-# Set project directories
+# Project directories and shared output validation
 data_dir <- file.path(project_root, "data")
 figure_dir <- file.path(project_root, "figures")
 
+verify_output_files <- function(files) {
+  info <- file.info(files)
+  invalid <- !file.exists(files) | is.na(info$size) | info$size <= 0
+  if (any(invalid)) stop("Missing or empty output files: ", paste(files[invalid], collapse = ", "))
+  invisible(files)
+}
 # Set working directory for subsequent R Markdown chunks
 knitr::opts_knit$set(root.dir = project_root)
 
 cat("Project root:", project_root, "\n")
-
 ```
 
 # 1. Environment Setup and Package Loading
@@ -68,19 +70,16 @@ cat("Project root:", project_root, "\n")
 This section installs and loads the required R and Bioconductor packages for data acquisition, preprocessing and statistical analysis.
 
 ```{r load-packages}
-
 # Install Bioconductor manager if missing
 if (!requireNamespace("BiocManager", quietly = TRUE)) {
   install.packages("BiocManager")
 }
-
 # Required Bioconductor packages
 bioc_pkgs <- c(
   "GEOquery",
   "Biobase",
   "limma"
 )
-
 # Install missing packages
 for (pkg in bioc_pkgs) {
 
@@ -95,7 +94,6 @@ for (pkg in bioc_pkgs) {
   }
 
 }
-
 # Load required libraries
 suppressPackageStartupMessages({
   library(GEOquery)
@@ -113,7 +111,6 @@ cat("Biobase version:",
 
 cat("limma version:",
     as.character(packageVersion("limma")), "\n")
-
 ```
 
 # 2. Data Acquisition and Import (NCBI GEO: GSE16561)
@@ -127,9 +124,7 @@ The samples were analysed using the Illumina HumanRef-8 v3.0 Expression BeadChip
 ## 2.1 Locate the Downloaded Dataset
 
 ```{r locate-data}
-
 options(timeout = 600)
-
 # Possible dataset files inside the project data folder
 possible_paths <- file.path(
   data_dir,
@@ -142,7 +137,6 @@ possible_paths <- file.path(
 available_paths <- possible_paths[
   file.exists(possible_paths)
 ]
-
 # Download from NCBI GEO only if the file is missing
 if (length(available_paths) == 0) {
 
@@ -179,19 +173,16 @@ if (length(available_paths) == 0) {
 }
 
 cat("Dataset found at:", file_to_use, "\n")
-
 ```
 
 ## 2.2 Import GEO Expression Data
 
 ```{r import-data}
-
 # Cache the imported ExpressionSet inside data/
 gse_rds <- file.path(
   data_dir,
   "GSE16561_raw_eSet.rds"
 )
-
 # Import the dataset or load the existing cache
 if (file.exists(gse_rds)) {
 
@@ -229,12 +220,10 @@ if (file.exists(gse_rds)) {
   )
 
 }
-
 # Extract expression and phenotype data
 expr_raw <- Biobase::exprs(gse)
 
 pdata_raw <- Biobase::pData(gse)
-
 # Ensure a numeric expression matrix
 expr_raw <- as.matrix(expr_raw)
 
@@ -249,7 +238,6 @@ cat(
   "Number of clinical samples:",
   nrow(pdata_raw), "\n"
 )
-
 ```
 
 # 3. Quality Control, Preprocessing and Gene Annotation
@@ -261,12 +249,10 @@ The submitted GSE16561 expression values have already undergone background corre
 ## 3.1 Clinical Metadata Cleaning
 
 ```{r metadata-cleaning}
-
 # Extract GEO sample identifiers
 sample_ids <- as.character(
   pdata_raw$geo_accession
 )
-
 # Match metadata to the order of the expression matrix
 sample_index <- match(
   colnames(expr_raw),
@@ -276,7 +262,6 @@ sample_index <- match(
 if (anyNA(sample_index)) {
   stop("Could not match sample identifiers.")
 }
-
 # Reorder metadata to match expression columns
 pdata_ordered <- pdata_raw[
   sample_index,
@@ -285,7 +270,6 @@ pdata_ordered <- pdata_raw[
 ]
 
 sample_ids <- sample_ids[sample_index]
-
 # Combine sample description fields
 text_columns <- vapply(
   pdata_ordered,
@@ -304,7 +288,6 @@ sample_description <- apply(
   paste,
   collapse = " "
 )
-
 # Avoid interpreting non-stroke as stroke
 sample_description <- gsub(
   "non[- ]stroke",
@@ -312,7 +295,6 @@ sample_description <- gsub(
   sample_description,
   ignore.case = TRUE
 )
-
 # Identify stroke and control samples
 stroke_flag <- grepl(
   "\\bstroke\\b|ischemic",
@@ -325,7 +307,6 @@ control_flag <- grepl(
   sample_description,
   ignore.case = TRUE
 )
-
 # Detect ambiguous sample classifications
 if (any(stroke_flag == control_flag)) {
 
@@ -336,7 +317,6 @@ if (any(stroke_flag == control_flag)) {
   stop("Some samples could not be classified correctly.")
 
 }
-
 # Create the clinical metadata table
 metadata <- data.frame(
   Sample_ID = sample_ids,
@@ -355,14 +335,12 @@ metadata$Group <- factor(
 )
 
 rownames(metadata) <- metadata$Sample_ID
-
 # Display group distribution
 cat("Clinical Sample Distribution:\n")
 
 group_counts <- table(metadata$Group)
 
 print(group_counts)
-
 # Verify expected sample counts
 if (
   group_counts["Control"] != 24 ||
@@ -374,13 +352,11 @@ if (
 }
 
 cat("Clinical metadata verification successful.\n")
-
 ```
 
 ## 3.2 Missing Value Inspection and Filtering
 
 ```{r missing-values}
-
 # Count original missing values
 na_count <- sum(is.na(expr_raw))
 
@@ -397,17 +373,14 @@ cat(
   "Missing percentage:",
   round(missing_percentage, 3), "%\n"
 )
-
 # Calculate missing-value proportion for each probe
 missing_fraction <- rowMeans(
   is.na(expr_raw)
 )
-
 # Identify probes containing at least one valid observation
 nonempty_probes <- rowSums(
   !is.na(expr_raw)
 ) > 0
-
 # Retain probes with no more than 20% missing values
 keep_probes <- (
   missing_fraction <= 0.20
@@ -433,7 +406,6 @@ cat(
   "Probes removed:",
   nrow(expr_raw) - nrow(expr_clean), "\n"
 )
-
 # Calculate median expression for each probe
 row_medians <- apply(
   expr_clean,
@@ -441,23 +413,11 @@ row_medians <- apply(
   median,
   na.rm = TRUE
 )
-
-# Identify rows requiring imputation
-missing_rows <- which(
-  rowSums(is.na(expr_clean)) > 0
-)
-
-# Replace missing values with row medians
-for (i in missing_rows) {
-
-  missing_index <- is.na(
-    expr_clean[i, ]
-  )
-
-  expr_clean[i, missing_index] <- row_medians[i]
-
+# Impute each missing cell using the median of its probe (row)
+missing_cells <- which(is.na(expr_clean), arr.ind = TRUE)
+if (nrow(missing_cells)) {
+  expr_clean[missing_cells] <- row_medians[missing_cells[, 1]]
 }
-
 # Verify missing-value handling
 cat(
   "Missing values after imputation:",
@@ -467,13 +427,11 @@ cat(
 if (anyNA(expr_clean)) {
   stop("Missing values remain after preprocessing.")
 }
-
 ```
 
 ## 3.3 Expression Scale Inspection
 
 ```{r expression-inspection}
-
 # Calculate expression value quantiles
 expression_quantiles <- quantile(
   expr_clean,
@@ -499,7 +457,6 @@ cat(
   "Mean expression:",
   mean(expr_clean), "\n"
 )
-
 # Retain the GEO-processed expression values
 expr_processed <- expr_clean
 
@@ -510,7 +467,6 @@ cat(
 cat(
   "Additional normalization was not applied.\n"
 )
-
 ```
 
 ## 3.4 Retrieve GPL6883 Platform Annotation
@@ -518,19 +474,16 @@ cat(
 The GPL6883 platform annotation is used to identify the official gene symbols corresponding to Illumina probe identifiers.
 
 ```{r platform-annotation}
-
 # Platform annotation file inside the project
 gpl_file <- file.path(
   data_dir,
   "GPL6883.annot.gz"
 )
-
 # NCBI GEO annotation download URL
 gpl_url <- paste0(
   "https://ftp.ncbi.nlm.nih.gov/geo/platforms/",
   "GPL6nnn/GPL6883/annot/GPL6883.annot.gz"
 )
-
 # Download annotation only if missing
 if (!file.exists(gpl_file)) {
 
@@ -555,7 +508,6 @@ if (
 }
 
 cat("GPL6883 annotation file located successfully.\n")
-
 # Read the annotation header
 con <- gzfile(
   gpl_file,
@@ -577,7 +529,6 @@ header_index <- grep(
 if (is.na(header_index)) {
   stop("GPL6883 annotation header was not found.")
 }
-
 # Import the complete annotation table
 con <- gzfile(
   gpl_file,
@@ -597,7 +548,6 @@ gpl_table <- read.delim(
 )
 
 close(con)
-
 # Clean column names
 colnames(gpl_table) <- sub(
   "^#",
@@ -613,30 +563,25 @@ cat(
 cat("Available annotation columns:\n")
 
 print(colnames(gpl_table))
-
 ```
 
 ## 3.5 Gene Symbol Mapping and Probe Summarisation
 
 ```{r gene-annotation}
-
 # Identify annotation columns
 id_col <- "ID"
 
 symbol_col <- "Gene symbol"
-
 # Verify columns
 stopifnot(
   id_col %in% colnames(gpl_table),
   symbol_col %in% colnames(gpl_table)
 )
-
 # Match expression probes with GPL6883 annotation
 probe_index <- match(
   rownames(expr_processed),
   as.character(gpl_table[[id_col]])
 )
-
 # Extract gene symbols
 probe_symbols <- as.character(
   gpl_table[[symbol_col]][probe_index]
@@ -653,7 +598,6 @@ cat(
   "Unmatched probes:",
   sum(is.na(probe_symbols)), "\n"
 )
-
 # Handle multiple gene symbols assigned to probes
 gene_symbols <- sub(
   "\\s*///.*$",
@@ -662,14 +606,12 @@ gene_symbols <- sub(
 )
 
 gene_symbols <- trimws(gene_symbols)
-
 # Identify valid gene annotations
 valid_probes <- !is.na(gene_symbols) &
   gene_symbols != "" &
   !toupper(gene_symbols) %in% c(
     "---", "NA", "NONE", "NULL"
   )
-
 # Retain successfully annotated probes
 expr_annotated <- expr_processed[
   valid_probes,
@@ -685,7 +627,6 @@ cat(
   "Valid annotated probes:",
   nrow(expr_annotated), "\n"
 )
-
 # Summarise duplicate probes using mean expression
 expr_gene <- limma::avereps(
   expr_annotated,
@@ -696,13 +637,11 @@ cat(
   "Final Cleaned Gene Matrix (Unique Genes x Samples):",
   nrow(expr_gene), "x", ncol(expr_gene), "\n"
 )
-
 ```
 
 ## 3.6 Final Quality Checks
 
 ```{r final-quality-checks}
-
 # Match metadata to expression matrix columns
 metadata <- metadata[
   match(
@@ -712,12 +651,10 @@ metadata <- metadata[
   ,
   drop = FALSE
 ]
-
 # Verify sample matching
 if (anyNA(metadata$Sample_ID)) {
   stop("Sample matching failed.")
 }
-
 # Check final matrix
 cat(
   "Final missing values:",
@@ -742,7 +679,6 @@ cat(
 cat("Final sample distribution:\n")
 
 print(table(metadata$Group))
-
 # Validate final dataset
 stopifnot(
   is.matrix(expr_gene),
@@ -755,13 +691,11 @@ stopifnot(
 )
 
 cat("All quality checks completed successfully.\n")
-
 ```
 
 ## 3.7 Export Cleaned Data and Metadata
 
 ```{r save-cleaned-data}
-
 # Export clinical metadata
 write.csv(
   metadata,
@@ -771,7 +705,6 @@ write.csv(
   ),
   row.names = FALSE
 )
-
 # Export annotated gene expression matrix
 write.csv(
   expr_gene,
@@ -781,7 +714,6 @@ write.csv(
   ),
   quote = FALSE
 )
-
 # Save combined cleaned dataset
 saveRDS(
   list(
@@ -793,7 +725,6 @@ saveRDS(
     "GSE16561_cleaned_data.rds"
   )
 )
-
 # Create quality control summary
 qc_summary <- data.frame(
   Metric = c(
@@ -808,7 +739,6 @@ qc_summary <- data.frame(
     "Stroke samples",
     "Final missing values"
   ),
-
   Value = c(
     nrow(expr_raw),
     ncol(expr_raw),
@@ -842,7 +772,6 @@ print(
     full.names = FALSE
   )
 )
-
 ```
 # 4. Exploratory Data Analysis (EDA)
 
@@ -855,7 +784,6 @@ The cleaned gene expression matrix containing 17,494 unique genes and 63 clinica
 ## 4.1 Data Preparation
 
 ```{r eda-preparation}
-
 # Load visualization packages
 if (!requireNamespace("ggplot2", quietly = TRUE)) {
   install.packages("ggplot2")
@@ -867,14 +795,12 @@ if (!requireNamespace("pheatmap", quietly = TRUE)) {
 
 library(ggplot2)
 library(pheatmap)
-
 # Verify cleaned expression matrix
 stopifnot(
   ncol(expr_gene) == 63,
   nrow(metadata) == 63,
   !anyNA(expr_gene)
 )
-
 # Match metadata to expression samples
 metadata <- metadata[
   match(
@@ -884,7 +810,6 @@ metadata <- metadata[
   ,
   drop = FALSE
 ]
-
 # Verify sample alignment
 stopifnot(
   identical(
@@ -892,16 +817,13 @@ stopifnot(
     metadata$Sample_ID
   )
 )
-
 # Display group distribution
 print(table(metadata$Group))
-
 # Define group colours
 group_colors <- c(
   "Control" = "#2C7BB6",
   "Stroke" = "#D7191C"
 )
-
 # Ensure figures directory exists
 dir.create(
   figure_dir,
@@ -917,18 +839,15 @@ cat("EDA preparation completed successfully.\n")
 A boxplot is used to compare the distribution of gene expression values across all 63 samples. This helps identify differences in expression distributions and potential outliers among the samples.
 
 ```{r expression-boxplot, fig.width=14, fig.height=7}
-
 # Create sample colours based on clinical groups
 sample_colors <- unname(
   group_colors[as.character(metadata$Group)]
 )
-
 # Define output file
 boxplot_file <- file.path(
   figure_dir,
   "fig1_expression_boxplot.png"
 )
-
 # Save the boxplot with a white background
 png(
   filename = boxplot_file,
@@ -961,7 +880,6 @@ legend(
 )
 
 dev.off()
-
 # Display the saved figure in the report
 knitr::include_graphics(boxplot_file)
 ```
@@ -972,26 +890,21 @@ knitr::include_graphics(boxplot_file)
 Density plots are used to examine the distribution of gene expression values across the clinical samples. A random sample of 3,000 genes is selected to make the visualisation manageable. The random seed is fixed to ensure reproducibility.
 
 ```{r expression-density, fig.width=10, fig.height=8}
-
 # Set seed for reproducibility
 set.seed(123)
-
 # Randomly select 3,000 genes
 selected_genes <- sample(
   seq_len(nrow(expr_gene)),
   size = min(3000, nrow(expr_gene))
 )
-
 # Calculate density for each sample
 density_data <- do.call(
   rbind,
   lapply(seq_len(ncol(expr_gene)), function(i) {
-
     sample_density <- density(
       expr_gene[selected_genes, i],
       na.rm = TRUE
     )
-
     data.frame(
       Expression = sample_density$x,
       Density = sample_density$y,
@@ -1000,13 +913,11 @@ density_data <- do.call(
     )
   })
 )
-
 # Set clinical group order
 density_data$Group <- factor(
   density_data$Group,
   levels = c("Control", "Stroke")
 )
-
 # Create density plot
 density_plot <- ggplot2::ggplot(
   density_data,
@@ -1034,20 +945,17 @@ density_plot <- ggplot2::ggplot(
   ggplot2::theme(
     legend.position = "bottom",
     plot.title = ggplot2::element_text(face = "bold"),
-
     # White background for the complete figure
     plot.background = ggplot2::element_rect(
       fill = "white",
       colour = NA
     ),
-
     # White background for the plotting panels
     panel.background = ggplot2::element_rect(
       fill = "white",
       colour = NA
     )
   )
-
 # Save the figure with a white background
 density_file <- file.path(
   figure_dir,
@@ -1062,7 +970,6 @@ ggplot2::ggsave(
   dpi = 300,
   bg = "white"
 )
-
 # Display the saved figure in the report
 knitr::include_graphics(density_file)
 ```
@@ -1072,14 +979,12 @@ knitr::include_graphics(density_file)
 Principal Component Analysis (PCA) is an unsupervised dimensionality reduction technique used to identify major patterns of variation in gene expression data. The 500 most variable genes are selected for this analysis. Each point in the PCA plot represents one clinical sample.
 
 ```{r pca-analysis, fig.width=9, fig.height=7}
-
 # Calculate the variance of each gene
 gene_variances <- apply(
   expr_gene,
   1,
   var
 )
-
 # Select the 500 most variable genes
 top_variable_genes <- order(
   gene_variances,
@@ -1091,20 +996,17 @@ pca_matrix <- expr_gene[
   ,
   drop = FALSE
 ]
-
 # Perform PCA using samples as observations
 pca_result <- prcomp(
   t(pca_matrix),
   center = TRUE,
   scale. = FALSE
 )
-
 # Calculate percentage of variance explained
 variance_explained <- (
   pca_result$sdev^2 /
   sum(pca_result$sdev^2)
 ) * 100
-
 # Extract PC1 and PC2 scores
 pca_scores <- data.frame(
   Sample_ID = rownames(pca_result$x),
@@ -1112,7 +1014,6 @@ pca_scores <- data.frame(
   PC2 = pca_result$x[, 2],
   stringsAsFactors = FALSE
 )
-
 # Attach clinical group information
 pca_scores$Group <- metadata$Group[
   match(pca_scores$Sample_ID, metadata$Sample_ID)
@@ -1122,13 +1023,11 @@ pca_scores$Group <- factor(
   pca_scores$Group,
   levels = c("Control", "Stroke")
 )
-
 # Verify that all PCA samples have matching clinical groups
 stopifnot(
   nrow(pca_scores) == 63,
   !anyNA(pca_scores$Group)
 )
-
 # Display variance explained
 cat(
   "PC1 variance explained:",
@@ -1139,7 +1038,6 @@ cat(
   "PC2 variance explained:",
   round(variance_explained[2], 2), "%\n"
 )
-
 # Create PCA plot
 pca_plot <- ggplot2::ggplot(
   pca_scores,
@@ -1183,20 +1081,17 @@ pca_plot <- ggplot2::ggplot(
   ggplot2::theme(
     plot.title = ggplot2::element_text(face = "bold"),
     legend.position = "bottom",
-
     # White background for the complete figure
     plot.background = ggplot2::element_rect(
       fill = "white",
       colour = NA
     ),
-
     # White background for the plotting panel
     panel.background = ggplot2::element_rect(
       fill = "white",
       colour = NA
     )
   )
-
 # Save PCA plot with a white background
 pca_file <- file.path(
   figure_dir,
@@ -1211,7 +1106,6 @@ ggplot2::ggsave(
   dpi = 300,
   bg = "white"
 )
-
 # Export PCA scores
 write.csv(
   pca_scores,
@@ -1221,10 +1115,8 @@ write.csv(
   ),
   row.names = FALSE
 )
-
 # Display plot in the report
 knitr::include_graphics(pca_file)
-
 ```
 
 ## 4.5 Sample-to-Sample Correlation Analysis
@@ -1232,34 +1124,28 @@ knitr::include_graphics(pca_file)
 Pearson correlation is used to measure the similarity of gene expression profiles between pairs of clinical samples. A sample-to-sample correlation matrix is generated and visualised using a heatmap. Higher positive correlation values indicate greater similarity in expression patterns.
 
 ```{r sample-correlation, fig.width=11, fig.height=10}
-
 # Calculate Pearson correlation between samples
 sample_correlation <- cor(
   expr_gene,
   method = "pearson"
 )
-
 # Create sample group annotation
 sample_annotation <- data.frame(
   Group = metadata$Group
 )
 
 rownames(sample_annotation) <- metadata$Sample_ID
-
 # Ensure annotation follows correlation matrix order
 sample_annotation <- sample_annotation[
   rownames(sample_correlation),
   ,
   drop = FALSE
 ]
-
 # Define output file
 correlation_file <- file.path(
   figure_dir,
   "fig4_sample_correlation_heatmap.png"
 )
-
-
 # Generate a cleaner correlation heatmap
 correlation_heatmap <- pheatmap(
   sample_correlation,
@@ -1267,27 +1153,21 @@ correlation_heatmap <- pheatmap(
     c("#2166AC", "white", "#B2182B")
   )(100),
   breaks = seq(-1, 1, length.out = 101),
-
   # Show group annotation only once, across the top
   annotation_col = sample_annotation,
   annotation_colors = list(
     Group = group_colors
   ),
   annotation_names_col = FALSE,
-
   clustering_distance_rows = "euclidean",
   clustering_distance_cols = "euclidean",
   clustering_method = "complete",
-
   border_color = NA,
   show_rownames = FALSE,
   show_colnames = FALSE,
-
   treeheight_row = 40,
   treeheight_col = 40,
-
   main = "Sample-to-Sample Pearson Correlation",
-
 silent = TRUE
 )
 # Save the heatmap using an explicitly managed device
@@ -1303,7 +1183,6 @@ grid::grid.newpage()
 grid::grid.draw(correlation_heatmap$gtable)
 
 grDevices::dev.off()
-
 # Export correlation matrix
 write.csv(
   sample_correlation,
@@ -1312,10 +1191,8 @@ write.csv(
     "GSE16561_sample_correlation.csv"
   )
 )
-
 # Display heatmap in the report
 knitr::include_graphics(correlation_file)
-
 ```
 
 ## 4.6 Exploratory Data Analysis Summary
@@ -1323,12 +1200,10 @@ knitr::include_graphics(correlation_file)
 The EDA results are summarised using key dataset statistics, expression distribution measurements, PCA variance and sample correlation values. The generated figures and output files are also verified.
 
 ```{r eda-summary}
-
 # Calculate pairwise sample correlations
 correlation_values <- sample_correlation[
   upper.tri(sample_correlation)
 ]
-
 # Create EDA summary table
 eda_summary <- data.frame(
   Metric = c(
@@ -1347,7 +1222,6 @@ eda_summary <- data.frame(
     "Minimum sample correlation",
     "Maximum sample correlation"
   ),
-
   Value = as.character(c(
     nrow(expr_gene),
     ncol(expr_gene),
@@ -1364,16 +1238,13 @@ eda_summary <- data.frame(
     round(min(correlation_values), 4),
     round(max(correlation_values), 4)
   )),
-
   stringsAsFactors = FALSE
 )
-
 # Display summary table
 knitr::kable(
   eda_summary,
   caption = "Exploratory Data Analysis Summary"
 )
-
 # Export summary table
 write.csv(
   eda_summary,
@@ -1383,7 +1254,6 @@ write.csv(
   ),
   row.names = FALSE
 )
-
 # Verify generated figures and result files
 eda_required_files <- c(
   file.path(figure_dir, "fig1_expression_boxplot.png"),
@@ -1394,10 +1264,8 @@ eda_required_files <- c(
   file.path(data_dir, "GSE16561_sample_correlation.csv"),
   file.path(data_dir, "GSE16561_EDA_summary.csv")
 )
-
 # Check whether each expected output file exists
 eda_file_exists <- file.exists(eda_required_files)
-
 # Get file sizes safely, including when a file is missing
 eda_file_sizes <- rep(0, length(eda_required_files))
 
@@ -1414,17 +1282,10 @@ eda_output_status <- data.frame(
 )
 
 print(eda_output_status)
-
 # Stop if any expected output is missing or empty
-if (
-  any(!eda_output_status$Exists) ||
-  any(eda_file_sizes <= 0)
-) {
-  stop("Some EDA output files are missing or empty.")
-}
+verify_output_files(eda_required_files)
 
 cat("All EDA output files verified successfully.\n")
-
 ```
 
 
@@ -1458,7 +1319,6 @@ metadata$Group <- factor(
   metadata$Group,
   levels = c("Control", "Stroke")
 )
-
 # Verify sample alignment and group information
 stopifnot(
   ncol(expr_gene) == nrow(metadata),
@@ -1468,16 +1328,13 @@ stopifnot(
   sum(metadata$Group == "Control") == 24,
   sum(metadata$Group == "Stroke") == 39
 )
-
 # Create the experimental design matrix
 design_matrix <- model.matrix(
   ~ Group,
   data = metadata
 )
-
 # Assign sample IDs to the design matrix rows
 rownames(design_matrix) <- metadata$Sample_ID
-
 # Display design matrix information
 cat("Design matrix dimensions:\n")
 print(dim(design_matrix))
@@ -1487,17 +1344,14 @@ print(colnames(design_matrix))
 
 cat("\nFirst six rows of the design matrix:\n")
 print(head(design_matrix))
-
 # Define the Stroke versus Control comparison
 contrast_matrix <- limma::makeContrasts(
   Stroke_vs_Control = GroupStroke,
   levels = design_matrix
 )
-
 # Display the contrast matrix
 cat("\nContrast matrix:\n")
 print(contrast_matrix)
-
 # Export the design matrix
 design_export <- data.frame(
   Sample_ID = rownames(design_matrix),
@@ -1510,24 +1364,19 @@ write.csv(
   file.path(data_dir, "GSE16561_limma_design_matrix.csv"),
   row.names = FALSE
 )
-
 # Export the contrast matrix
 write.csv(
   contrast_matrix,
   file.path(data_dir, "GSE16561_limma_contrast_matrix.csv"),
   row.names = TRUE
 )
-
 # Verify the generated files
 limma_setup_files <- c(
   file.path(data_dir, "GSE16561_limma_design_matrix.csv"),
   file.path(data_dir, "GSE16561_limma_contrast_matrix.csv")
 )
 
-stopifnot(
-  all(file.exists(limma_setup_files)),
-  all(file.info(limma_setup_files)$size > 0)
-)
+verify_output_files(limma_setup_files)
 
 cat("\nLimma design and contrast setup completed successfully.\n")
 ```
@@ -1548,25 +1397,21 @@ stopifnot(
   ncol(contrast_matrix) == 1,
   colnames(contrast_matrix)[1] == "Stroke_vs_Control"
 )
-
 # Fit a linear model for each gene
 fit_initial <- limma::lmFit(
   expr_gene,
   design_matrix
 )
-
 # Apply the Stroke versus Control contrast
 fit_contrasted <- limma::contrasts.fit(
   fit_initial,
   contrast_matrix
 )
-
 # Apply robust empirical Bayes moderation
 fit_ebayes <- limma::eBayes(
   fit_contrasted,
   robust = TRUE
 )
-
 # Verify model results
 stopifnot(
   nrow(fit_ebayes$coefficients) == nrow(expr_gene),
@@ -1580,7 +1425,6 @@ stopifnot(
   all(fit_ebayes$p.value >= 0),
   all(fit_ebayes$p.value <= 1)
 )
-
 # Display model information
 cat("Limma model fitting summary:\n")
 
@@ -1610,7 +1454,6 @@ cat(
 )
 
 cat("Robust empirical Bayes moderation: Applied\n")
-
 # Save the fitted model for subsequent analysis
 model_rds_file <- file.path(
   data_dir,
@@ -1621,7 +1464,6 @@ saveRDS(
   fit_ebayes,
   model_rds_file
 )
-
 # Create a summary of the model fitting stage
 limma_model_summary <- data.frame(
   Metric = c(
@@ -1635,7 +1477,6 @@ limma_model_summary <- data.frame(
     "Robust moderation",
     "Median residual degrees of freedom"
   ),
-
   Value = c(
     nrow(fit_ebayes$coefficients),
     ncol(expr_gene),
@@ -1648,24 +1489,19 @@ limma_model_summary <- data.frame(
     round(median(fit_ebayes$df.residual), 2)
   )
 )
-
 # Export the model summary
 write.csv(
   limma_model_summary,
   file.path(data_dir, "GSE16561_limma_model_summary.csv"),
   row.names = FALSE
 )
-
 # Verify generated output files
 limma_model_files <- c(
   model_rds_file,
   file.path(data_dir, "GSE16561_limma_model_summary.csv")
 )
 
-stopifnot(
-  all(file.exists(limma_model_files)),
-  all(file.info(limma_model_files)$size > 0)
-)
+verify_output_files(limma_model_files)
 
 cat("\nLimma model fitting completed successfully.\n")
 ```
@@ -1678,10 +1514,8 @@ The results are extracted from the fitted Limma model. The Benjamini-Hochberg me
 Genes with an adjusted p-value below 0.05 are considered statistically significant. Positive log-fold change (logFC) values indicate higher expression in the Stroke group, while negative values indicate lower expression in the Stroke group compared with the Control group.
 
 ```{r deg-identification}
-
 # Define the false discovery rate significance threshold
 fdr_threshold <- 0.05
-
 # Extract differential expression results for all genes
 deg_results <- limma::topTable(
   fit_ebayes,
@@ -1691,10 +1525,8 @@ deg_results <- limma::topTable(
   sort.by = "P",
   p.value = 1
 )
-
 # Add gene symbols as an explicit column
 deg_results$Gene_Symbol <- rownames(deg_results)
-
 # Arrange the result columns
 deg_results <- deg_results[
   ,
@@ -1708,7 +1540,6 @@ deg_results <- deg_results[
     "B"
   )
 ]
-
 # Verify the differential expression results
 stopifnot(
   nrow(deg_results) == nrow(expr_gene),
@@ -1718,10 +1549,8 @@ stopifnot(
   all(deg_results$P.Value >= 0 & deg_results$P.Value <= 1),
   all(deg_results$adj.P.Val >= 0 & deg_results$adj.P.Val <= 1)
 )
-
 # Identify statistically significant genes
 is_significant <- deg_results$adj.P.Val < fdr_threshold
-
 # Classify the direction of differential expression
 deg_results$Regulation <- ifelse(
   !is_significant,
@@ -1736,28 +1565,24 @@ deg_results$Regulation <- ifelse(
     )
   )
 )
-
 # Extract significant differentially expressed genes
 significant_degs <- deg_results[
   is_significant,
   ,
   drop = FALSE
 ]
-
 # Extract significant upregulated genes
 upregulated_degs <- deg_results[
   deg_results$Regulation == "Upregulated in Stroke",
   ,
   drop = FALSE
 ]
-
 # Extract significant downregulated genes
 downregulated_degs <- deg_results[
   deg_results$Regulation == "Downregulated in Stroke",
   ,
   drop = FALSE
 ]
-
 # Display differential expression summary
 cat("Differential Expression Analysis Summary\n")
 cat("-----------------------------------------\n")
@@ -1777,7 +1602,6 @@ cat(
   sum(!is_significant),
   "\n"
 )
-
 # Display the top 10 genes ranked by p-value
 cat("\nTop 10 genes ranked by p-value:\n")
 
@@ -1785,7 +1609,6 @@ print(
   head(deg_results, 10),
   row.names = FALSE
 )
-
 # Export all differential expression results
 write.csv(
   deg_results,
@@ -1795,7 +1618,6 @@ write.csv(
   ),
   row.names = FALSE
 )
-
 # Export significant differentially expressed genes
 write.csv(
   significant_degs,
@@ -1805,7 +1627,6 @@ write.csv(
   ),
   row.names = FALSE
 )
-
 # Create a summary table
 deg_summary <- data.frame(
   Metric = c(
@@ -1817,7 +1638,6 @@ deg_summary <- data.frame(
     "Genes not significant",
     "Minimum adjusted p-value"
   ),
-
   Value = c(
     as.character(nrow(deg_results)),
     as.character(fdr_threshold),
@@ -1831,10 +1651,8 @@ deg_summary <- data.frame(
       digits = 4
     )
   ),
-
   stringsAsFactors = FALSE
 )
-
 # Export the DEG summary
 write.csv(
   deg_summary,
@@ -1844,7 +1662,6 @@ write.csv(
   ),
   row.names = FALSE
 )
-
 # Verify all output files
 deg_output_files <- c(
   file.path(
@@ -1861,15 +1678,11 @@ deg_output_files <- c(
   )
 )
 
-stopifnot(
-  all(file.exists(deg_output_files)),
-  all(file.info(deg_output_files)$size > 0)
-)
+verify_output_files(deg_output_files)
 
 cat("\nAll differential expression output files verified.\n")
 
 cat("\nDifferential expression analysis completed successfully.\n")
-
 ```
 ## 5.4 Volcano Plot of Differentially Expressed Genes
 
@@ -1878,10 +1691,8 @@ A volcano plot is used to visualise the differential expression results obtained
 Genes with adjusted p-values below 0.05 are considered statistically significant. Genes with positive log fold changes are represented as upregulated in Stroke, while genes with negative log fold changes are represented as downregulated in Stroke.
 
 ```{r volcano-plot, fig.width=10, fig.height=7}
-
 # Prepare data for volcano plot
 volcano_data <- deg_results
-
 # Calculate negative log10 of adjusted p-values
 # A small lower limit prevents infinite values when p-values are zero
 volcano_data$neg_log10_FDR <- -log10(
@@ -1890,7 +1701,6 @@ volcano_data$neg_log10_FDR <- -log10(
     .Machine$double.xmin
   )
 )
-
 # Set the order of regulation categories
 volcano_data$Regulation <- factor(
   volcano_data$Regulation,
@@ -1901,7 +1711,6 @@ volcano_data$Regulation <- factor(
     "Significant (zero logFC)"
   )
 )
-
 # Create volcano plot
 volcano_plot <- ggplot2::ggplot(
   volcano_data,
@@ -1911,27 +1720,23 @@ volcano_plot <- ggplot2::ggplot(
     colour = Regulation
   )
 ) +
-
   # Display genes as points
   ggplot2::geom_point(
     alpha = 0.65,
     size = 1.3
   ) +
-
   # Add horizontal FDR significance threshold
   ggplot2::geom_hline(
     yintercept = -log10(fdr_threshold),
     linetype = "dashed",
     colour = "black"
   ) +
-
   # Add vertical reference line at zero log fold change
   ggplot2::geom_vline(
     xintercept = 0,
     linetype = "dashed",
     colour = "black"
   ) +
-
   # Define colours for regulation categories
   ggplot2::scale_colour_manual(
     values = c(
@@ -1942,7 +1747,6 @@ volcano_plot <- ggplot2::ggplot(
     ),
     drop = TRUE
   ) +
-
   # Add plot titles and labels
   ggplot2::labs(
     title = "Volcano Plot of Differentially Expressed Genes",
@@ -1954,7 +1758,6 @@ volcano_plot <- ggplot2::ggplot(
     y = "-log10(BH-adjusted p-value)",
     colour = "Gene Regulation"
   ) +
-
   # Apply plot formatting
   ggplot2::theme_minimal(base_size = 12) +
 
@@ -1963,28 +1766,23 @@ volcano_plot <- ggplot2::ggplot(
       face = "bold",
       size = 14
     ),
-
     legend.position = "bottom",
-
     # White background for the complete plot
     plot.background = ggplot2::element_rect(
       fill = "white",
       colour = NA
     ),
-
     # White background for the plotting panel
     panel.background = ggplot2::element_rect(
       fill = "white",
       colour = NA
     )
   )
-
 # Define volcano plot output file
 volcano_plot_file <- file.path(
   figure_dir,
   "fig5_volcano_plot.png"
 )
-
 # Save volcano plot with a white background
 ggplot2::ggsave(
   filename = volcano_plot_file,
@@ -1994,15 +1792,12 @@ ggplot2::ggsave(
   dpi = 300,
   bg = "white"
 )
-
 # Verify volcano plot data and output
 stopifnot(
   nrow(volcano_data) == nrow(deg_results),
-  all(is.finite(volcano_data$neg_log10_FDR)),
-  file.exists(volcano_plot_file),
-  file.info(volcano_plot_file)$size > 0
+  all(is.finite(volcano_data$neg_log10_FDR))
 )
-
+verify_output_files(volcano_plot_file)
 # Display plot in the report
 print(volcano_plot)
 
@@ -2031,7 +1826,6 @@ cat(
   nrow(downregulated_degs),
   "\n"
 )
-
 ```
 ## 5.5 Gene ID Annotation and Enrichment Background Preparation
 
@@ -2042,7 +1836,6 @@ Entrez Gene IDs are used to connect the differentially expressed genes with biol
 The significant differentially expressed genes are mapped separately from the complete set of tested genes. All genes with a unique Entrez Gene ID mapping are retained as the background gene set for subsequent enrichment analysis.
 
 ```{r gene-id-mapping}
-
 # Install Bioconductor packages if they are missing
 annotation_packages <- c(
   "AnnotationDbi",
@@ -2062,16 +1855,13 @@ for (pkg in annotation_packages) {
   }
 
 }
-
 # Load human gene annotation database
 library(AnnotationDbi)
 library(org.Hs.eg.db)
-
 # Retrieve unique gene symbols from all tested genes
 gene_symbols <- unique(
   as.character(deg_results$Gene_Symbol)
 )
-
 # Verify gene symbols
 stopifnot(
   length(gene_symbols) > 0,
@@ -2080,7 +1870,6 @@ stopifnot(
 )
 
 cat("Total unique gene symbols:", length(gene_symbols), "\n")
-
 # Retrieve Entrez IDs and official gene names
 annotation_table <- AnnotationDbi::select(
   x = org.Hs.eg.db::org.Hs.eg.db,
@@ -2088,84 +1877,25 @@ annotation_table <- AnnotationDbi::select(
   columns = c("ENTREZID", "GENENAME"),
   keytype = "SYMBOL"
 )
-
 # Remove duplicate annotation records
 annotation_table <- unique(annotation_table)
-
-# Create a mapping function
+# Return one record per symbol; discard one-to-many Entrez mappings
 map_single_gene <- function(symbol) {
+  rows <- annotation_table[!is.na(annotation_table$SYMBOL) & annotation_table$SYMBOL == symbol, , drop = FALSE]
+  entrez <- unique(na.omit(as.character(rows$ENTREZID)))
+  entrez <- entrez[nzchar(entrez)]
+  gene_names <- unique(na.omit(as.character(rows$GENENAME)))
+  gene_names <- gene_names[nzchar(gene_names)]
+  status <- if (!length(entrez)) "Unmapped" else if (length(entrez) > 1) "Ambiguous" else "Mapped"
 
-  # Find annotation records for the gene symbol
-  gene_rows <- annotation_table[
-    !is.na(annotation_table$SYMBOL) &
-      annotation_table$SYMBOL == symbol,
-    ,
-    drop = FALSE
-  ]
-
-  # Extract unique valid Entrez IDs
-  entrez_ids <- unique(
-    as.character(gene_rows$ENTREZID)
-  )
-
-  entrez_ids <- entrez_ids[
-    !is.na(entrez_ids) & nzchar(entrez_ids)
-  ]
-
-  # Extract official gene names
-  gene_names <- unique(
-    as.character(gene_rows$GENENAME)
-  )
-
-  gene_names <- gene_names[
-    !is.na(gene_names) & nzchar(gene_names)
-  ]
-
-  # Handle genes without an Entrez ID
-  if (length(entrez_ids) == 0) {
-
-    return(
-      data.frame(
-        Gene_Symbol = symbol,
-        Gene_Name = NA_character_,
-        ENTREZID = NA_character_,
-        Mapping_Status = "Unmapped",
-        stringsAsFactors = FALSE
-      )
-    )
-
-  }
-
-  # Exclude ambiguous one-to-many mappings
-  if (length(entrez_ids) > 1) {
-
-    return(
-      data.frame(
-        Gene_Symbol = symbol,
-        Gene_Name = NA_character_,
-        ENTREZID = NA_character_,
-        Mapping_Status = "Ambiguous",
-        stringsAsFactors = FALSE
-      )
-    )
-
-  }
-
-  # Return uniquely mapped gene information
   data.frame(
     Gene_Symbol = symbol,
-    Gene_Name = if (length(gene_names) == 1) {
-      gene_names[1]
-    } else {
-      NA_character_
-    },
-    ENTREZID = entrez_ids[1],
-    Mapping_Status = "Mapped",
+    Gene_Name = if (status == "Mapped" && length(gene_names) == 1) gene_names[1] else NA_character_,
+    ENTREZID = if (status == "Mapped") entrez[1] else NA_character_,
+    Mapping_Status = status,
     stringsAsFactors = FALSE
   )
-
 }
-
 # Map all tested gene symbols
 mapping_results <- lapply(
   gene_symbols,
@@ -2178,7 +1908,6 @@ gene_id_mapping <- do.call(
 )
 
 rownames(gene_id_mapping) <- NULL
-
 # Verify gene identifier mapping
 stopifnot(
   nrow(gene_id_mapping) == length(gene_symbols),
@@ -2188,7 +1917,6 @@ stopifnot(
       c("Mapped", "Unmapped", "Ambiguous")
   )
 )
-
 # Add gene identifiers to the complete DEG results
 mapping_index <- match(
   deg_results$Gene_Symbol,
@@ -2205,7 +1933,6 @@ deg_annotated_results$ENTREZID <-
 
 deg_annotated_results$Mapping_Status <-
   gene_id_mapping$Mapping_Status[mapping_index]
-
 # Prepare background gene set from all tested genes
 background_entrez <- unique(
   na.omit(gene_id_mapping$ENTREZID)
@@ -2214,7 +1941,6 @@ background_entrez <- unique(
 background_entrez <- sort(
   as.character(background_entrez)
 )
-
 # Prepare significant Entrez gene identifiers
 significant_entrez <- unique(
   na.omit(
@@ -2223,7 +1949,6 @@ significant_entrez <- unique(
     ]
   )
 )
-
 # Prepare upregulated Entrez gene identifiers
 upregulated_entrez <- unique(
   na.omit(
@@ -2233,7 +1958,6 @@ upregulated_entrez <- unique(
     ]
   )
 )
-
 # Prepare downregulated Entrez gene identifiers
 downregulated_entrez <- unique(
   na.omit(
@@ -2243,7 +1967,6 @@ downregulated_entrez <- unique(
     ]
   )
 )
-
 # Check the enrichment gene sets
 if (length(background_entrez) == 0) {
   stop("No genes were successfully mapped to Entrez IDs.")
@@ -2260,7 +1983,6 @@ stopifnot(
   all(upregulated_entrez %in% background_entrez),
   all(downregulated_entrez %in% background_entrez)
 )
-
 # Store gene sets for subsequent enrichment analysis
 enrichment_gene_sets <- list(
   significant = significant_entrez,
@@ -2268,7 +1990,6 @@ enrichment_gene_sets <- list(
   downregulated = downregulated_entrez,
   universe = background_entrez
 )
-
 # Create an enrichment gene-set table
 enrichment_gene_sets_table <- deg_annotated_results[
   ,
@@ -2288,7 +2009,6 @@ enrichment_gene_sets_table$In_Enrichment_Background <-
 enrichment_gene_sets_table$In_Significant_DEG_Set <-
   enrichment_gene_sets_table$Regulation != "Not significant" &
   enrichment_gene_sets_table$Mapping_Status == "Mapped"
-
 # Display mapping summary
 cat("\nGene ID Mapping Summary\n")
 cat("-----------------------\n")
@@ -2332,7 +2052,6 @@ cat(
   "Downregulated genes with Entrez IDs:",
   length(downregulated_entrez), "\n"
 )
-
 # Create mapping summary table
 mapping_summary <- data.frame(
   Metric = c(
@@ -2345,7 +2064,6 @@ mapping_summary <- data.frame(
     "Upregulated genes with Entrez IDs",
     "Downregulated genes with Entrez IDs"
   ),
-
   Value = as.character(c(
     nrow(gene_id_mapping),
     sum(gene_id_mapping$Mapping_Status == "Mapped"),
@@ -2356,10 +2074,8 @@ mapping_summary <- data.frame(
     length(upregulated_entrez),
     length(downregulated_entrez)
   )),
-
   stringsAsFactors = FALSE
 )
-
 # Export gene identifier mapping
 write.csv(
   gene_id_mapping,
@@ -2369,7 +2085,6 @@ write.csv(
   ),
   row.names = FALSE
 )
-
 # Export annotated differential expression results
 write.csv(
   deg_annotated_results,
@@ -2379,7 +2094,6 @@ write.csv(
   ),
   row.names = FALSE
 )
-
 # Export enrichment gene-set information
 write.csv(
   enrichment_gene_sets_table,
@@ -2389,7 +2103,6 @@ write.csv(
   ),
   row.names = FALSE
 )
-
 # Export mapping summary
 write.csv(
   mapping_summary,
@@ -2399,7 +2112,6 @@ write.csv(
   ),
   row.names = FALSE
 )
-
 # Save gene sets for subsequent analysis
 saveRDS(
   enrichment_gene_sets,
@@ -2408,7 +2120,6 @@ saveRDS(
     "GSE16561_enrichment_gene_sets.rds"
   )
 )
-
 # Verify all output files
 mapping_output_files <- c(
   file.path(data_dir, "GSE16561_gene_id_mapping.csv"),
@@ -2418,15 +2129,11 @@ mapping_output_files <- c(
   file.path(data_dir, "GSE16561_enrichment_gene_sets.rds")
 )
 
-stopifnot(
-  all(file.exists(mapping_output_files)),
-  all(file.info(mapping_output_files)$size > 0)
-)
+verify_output_files(mapping_output_files)
 
 cat("\nAll gene annotation output files verified.\n")
 
 cat("\nGene ID annotation completed successfully.\n")
-
 ```
 
 # 5.6 Functional and Pathway Enrichment Analysis
@@ -2448,588 +2155,178 @@ prepared in Section 5.5. Benjamini-Hochberg adjustment is used to control
 the false discovery rate.
 
 ```{r functional-enrichment-analysis, fig.width=10, fig.height=7}
-
-
-# Check required packages
+# Validate inputs and prepare the three gene sets
 stopifnot(
   requireNamespace("limma", quietly = TRUE),
   requireNamespace("org.Hs.eg.db", quietly = TRUE),
-  requireNamespace("ggplot2", quietly = TRUE)
+  requireNamespace("ggplot2", quietly = TRUE),
+  exists("background_entrez"), exists("significant_entrez"),
+  exists("upregulated_entrez"), exists("downregulated_entrez")
 )
 
-# Verify gene sets from Section 5.5
-stopifnot(
-  exists("background_entrez"),
-  exists("significant_entrez"),
-  exists("upregulated_entrez"),
-  exists("downregulated_entrez")
+enrichment_fdr_threshold <- 0.05
+gene_sets <- list(
+  All = significant_entrez,
+  Upregulated = upregulated_entrez,
+  Downregulated = downregulated_entrez
 )
-
-# Prepare unique Entrez gene IDs
+gene_sets <- lapply(gene_sets, function(x) unique(na.omit(as.character(x))))
 background_entrez <- unique(na.omit(as.character(background_entrez)))
-significant_entrez <- unique(na.omit(as.character(significant_entrez)))
-upregulated_entrez <- unique(na.omit(as.character(upregulated_entrez)))
-downregulated_entrez <- unique(na.omit(as.character(downregulated_entrez)))
-
-# Verify gene sets
+significant_entrez <- gene_sets$All
+upregulated_entrez <- gene_sets$Upregulated
+downregulated_entrez <- gene_sets$Downregulated
 stopifnot(
   length(background_entrez) > 0,
-  length(significant_entrez) > 0,
-  all(significant_entrez %in% background_entrez),
-  all(upregulated_entrez %in% background_entrez),
-  all(downregulated_entrez %in% background_entrez)
+  length(gene_sets$All) > 0,
+  all(unlist(gene_sets) %in% background_entrez)
 )
-
-# Set FDR threshold
-enrichment_fdr_threshold <- 0.05
-
-# Function to perform GO enrichment
+# GO enrichment; adjust FDR separately within each ontology
 run_go_enrichment <- function(gene_ids, analysis_name) {
-
-  result <- limma::goana(
-    de = gene_ids,
-    universe = background_entrez,
-    species = "Hs"
-  )
-
-  result <- as.data.frame(result)
-
-  if (nrow(result) == 0) {
-    return(result)
-  }
-
-  # Preserve GO identifiers
+  result <- as.data.frame(limma::goana(de = gene_ids, universe = background_entrez, species = "Hs"))
+  if (!nrow(result)) return(result)
   result$GO_ID <- rownames(result)
-
   result$Analysis <- analysis_name
-
   result$Input_Genes <- length(gene_ids)
-
-  # Adjust p-values separately for each GO ontology
   result$FDR <- NA_real_
-
   for (ontology in unique(result$Ont)) {
-
-    selected <- result$Ont == ontology
-
-    result$FDR[selected] <- p.adjust(
-      result$P.DE[selected],
-      method = "BH"
-    )
-
+    idx <- result$Ont == ontology
+    result$FDR[idx] <- p.adjust(result$P.DE[idx], method = "BH")
   }
-
-  result$Significant <- (
-    !is.na(result$FDR) &
-      result$FDR < enrichment_fdr_threshold
-  )
-
+  result$Significant <- !is.na(result$FDR) & result$FDR < enrichment_fdr_threshold
   rownames(result) <- NULL
-
   result
 }
 
-# Perform GO analysis for all significant genes
-go_all <- run_go_enrichment(
-  significant_entrez,
-  "All significant DEGs"
+go_results <- setNames(
+  lapply(names(gene_sets), function(nm) run_go_enrichment(gene_sets[[nm]], paste(nm, if (nm == "All") "significant DEGs" else "genes"))),
+  names(gene_sets)
 )
-
-# Perform GO analysis for upregulated genes
-go_up <- run_go_enrichment(
-  upregulated_entrez,
-  "Upregulated genes"
-)
-
-# Perform GO analysis for downregulated genes
-go_down <- run_go_enrichment(
-  downregulated_entrez,
-  "Downregulated genes"
-)
-
-# Separate GO ontologies
-go_bp_all <- subset(go_all, Ont == "BP")
-go_mf_all <- subset(go_all, Ont == "MF")
-go_cc_all <- subset(go_all, Ont == "CC")
-
-go_bp_upregulated <- subset(go_up, Ont == "BP")
-go_bp_downregulated <- subset(go_down, Ont == "BP")
-
+go_bp_all <- subset(go_results$All, Ont == "BP")
+go_mf_all <- subset(go_results$All, Ont == "MF")
+go_cc_all <- subset(go_results$All, Ont == "CC")
+go_bp_upregulated <- subset(go_results$Upregulated, Ont == "BP")
+go_bp_downregulated <- subset(go_results$Downregulated, Ont == "BP")
 cat("\nGO enrichment analysis completed.\n")
-
-# Function to perform KEGG enrichment
+# KEGG enrichment; retain status information when the REST service is unavailable
 run_kegg_enrichment <- function(gene_ids, analysis_name) {
-
   tryCatch({
-
-    result <- limma::kegga(
-      de = gene_ids,
-      universe = background_entrez,
-      species.KEGG = "hsa"
-    )
-
-    result <- as.data.frame(result)
-
-    if (nrow(result) > 0) {
-
+    result <- as.data.frame(limma::kegga(de = gene_ids, universe = background_entrez, species.KEGG = "hsa"))
+    if (nrow(result)) {
       result$KEGG_ID <- rownames(result)
-
-      # Standardise pathway description column
       result$Term <- result$Pathway
-
       result$Analysis <- analysis_name
-
       result$Input_Genes <- length(gene_ids)
-
-      result$FDR <- p.adjust(
-        result$P.DE,
-        method = "BH"
-      )
-
-      result$Significant <- (
-        !is.na(result$FDR) &
-          result$FDR < enrichment_fdr_threshold
-      )
-
+      result$FDR <- p.adjust(result$P.DE, method = "BH")
+      result$Significant <- !is.na(result$FDR) & result$FDR < enrichment_fdr_threshold
       rownames(result) <- NULL
-
     }
-
-    list(
-      table = result,
-      status = "Completed"
-    )
-
+    list(table = result, status = "Completed")
   }, error = function(e) {
-
-    cat(
-      "\nKEGG analysis unavailable for",
-      analysis_name,
-      ":",
-      conditionMessage(e),
-      "\n"
-    )
-
-    list(
-      table = data.frame(),
-      status = paste(
-        "Unavailable:",
-        conditionMessage(e)
-      )
-    )
-
+    cat("\nKEGG analysis unavailable for", analysis_name, ":", conditionMessage(e), "\n")
+    list(table = data.frame(), status = paste("Unavailable:", conditionMessage(e)))
   })
-
 }
 
-# Perform KEGG enrichment analyses
-kegg_all_result <- run_kegg_enrichment(
-  significant_entrez,
-  "All significant DEGs"
+kegg_results <- setNames(
+  lapply(names(gene_sets), function(nm) run_kegg_enrichment(gene_sets[[nm]], paste(nm, if (nm == "All") "significant DEGs" else "genes"))),
+  names(gene_sets)
+)
+kegg_status <- setNames(
+  vapply(kegg_results, `[[`, character(1), "status"),
+  paste0("KEGG_", names(kegg_results))
 )
 
-kegg_up_result <- run_kegg_enrichment(
-  upregulated_entrez,
-  "Upregulated genes"
-)
-
-kegg_down_result <- run_kegg_enrichment(
-  downregulated_entrez,
-  "Downregulated genes"
-)
-
-# Collect enrichment tables
 enrichment_results <- list(
-
   GO_BP_All = go_bp_all,
-
   GO_MF_All = go_mf_all,
-
   GO_CC_All = go_cc_all,
-
   GO_BP_Upregulated = go_bp_upregulated,
-
   GO_BP_Downregulated = go_bp_downregulated,
-
-  KEGG_All = kegg_all_result$table,
-
-  KEGG_Upregulated = kegg_up_result$table,
-
-  KEGG_Downregulated = kegg_down_result$table
-
+  KEGG_All = kegg_results$All$table,
+  KEGG_Upregulated = kegg_results$Upregulated$table,
+  KEGG_Downregulated = kegg_results$Downregulated$table
 )
-
-# Record KEGG analysis statuses
-kegg_status <- c(
-  KEGG_All = kegg_all_result$status,
-  KEGG_Upregulated = kegg_up_result$status,
-  KEGG_Downregulated = kegg_down_result$status
-)
-
-# Define output CSV filenames
+# Export each enrichment table and a single summary table
 enrichment_csv_files <- setNames(
-
-  file.path(
-    data_dir,
-    paste0(
-      "GSE16561_",
-      tolower(names(enrichment_results)),
-      "_enrichment.csv"
-    )
-  ),
-
+  file.path(data_dir, paste0("GSE16561_", tolower(names(enrichment_results)), "_enrichment.csv")),
   names(enrichment_results)
-
 )
-
-# Export enrichment tables
-for (result_name in names(enrichment_results)) {
-
-  result_table <- enrichment_results[[result_name]]
-
-  if (ncol(result_table) == 0) {
-
-    result_table <- data.frame(
-      Note = "No results were returned. Check the analysis status."
-    )
-
-  }
-
-  write.csv(
-    result_table,
-    enrichment_csv_files[[result_name]],
-    row.names = FALSE
-  )
-
+for (nm in names(enrichment_results)) {
+  tab <- enrichment_results[[nm]]
+  if (!ncol(tab)) tab <- data.frame(Note = "No results were returned. Check the analysis status.")
+  write.csv(tab, enrichment_csv_files[[nm]], row.names = FALSE)
 }
 
-# Create enrichment summary
-enrichment_summary <- do.call(
-
-  rbind,
-
-  lapply(
-    names(enrichment_results),
-
-    function(result_name) {
-
-      result_table <- enrichment_results[[result_name]]
-
-      returned_terms <- nrow(result_table)
-
-      significant_terms <- if (
-        returned_terms > 0 &&
-        "FDR" %in% names(result_table)
-      ) {
-
-        sum(
-          !is.na(result_table$FDR) &
-            result_table$FDR < enrichment_fdr_threshold
-        )
-
-      } else {
-        0
-      }
-
-      status <- if (
-        grepl("^KEGG", result_name)
-      ) {
-
-        unname(kegg_status[result_name])
-
-      } else {
-
-        "Completed"
-
-      }
-
-      data.frame(
-
-        Analysis = result_name,
-
-        Returned_Terms = returned_terms,
-
-        Significant_Terms_FDR_0.05 = significant_terms,
-
-        Status = status,
-
-        stringsAsFactors = FALSE
-
-      )
-
-    }
-
+enrichment_summary <- do.call(rbind, lapply(names(enrichment_results), function(nm) {
+  tab <- enrichment_results[[nm]]
+  fdr <- if ("FDR" %in% names(tab)) tab$FDR else numeric()
+  data.frame(
+    Analysis = nm,
+    Returned_Terms = nrow(tab),
+    Significant_Terms_FDR_0.05 = sum(!is.na(fdr) & fdr < enrichment_fdr_threshold),
+    Status = if (startsWith(nm, "KEGG_")) unname(kegg_status[nm]) else "Completed",
+    stringsAsFactors = FALSE
   )
+}))
+enrichment_summary_file <- file.path(data_dir, "GSE16561_enrichment_summary.csv")
+write.csv(enrichment_summary, enrichment_summary_file, row.names = FALSE)
+# Create a dot plot for significant terms, or a clear empty-result panel
+create_enrichment_plot <- function(result_table, plot_title, output_file) {
+  required <- c("FDR", "Term", "DE", "Input_Genes")
+  significant <- if (nrow(result_table) && all(required %in% names(result_table))) {
+    result_table[!is.na(result_table$FDR) & result_table$FDR < enrichment_fdr_threshold, , drop = FALSE]
+  } else data.frame()
 
-)
-
-# Export summary
-enrichment_summary_file <- file.path(
-  data_dir,
-  "GSE16561_enrichment_summary.csv"
-)
-
-write.csv(
-  enrichment_summary,
-  enrichment_summary_file,
-  row.names = FALSE
-)
-
-# Function to generate enrichment dot plots
-create_enrichment_plot <- function(
-  result_table,
-  plot_title,
-  output_file
-) {
-
-  significant_terms <- data.frame()
-
-  if (
-    nrow(result_table) > 0 &&
-    all(c("FDR", "Term", "DE", "Input_Genes") %in%
-        names(result_table))
-  ) {
-
-    significant_terms <- result_table[
-      !is.na(result_table$FDR) &
-        result_table$FDR < enrichment_fdr_threshold,
-      ,
-      drop = FALSE
-    ]
-
-  }
-
-  # Create plot when significant terms are available
-  if (nrow(significant_terms) > 0) {
-
-    significant_terms$GeneRatio <- (
-      significant_terms$DE /
-        significant_terms$Input_Genes
-    )
-
-    significant_terms <- significant_terms[
-      order(significant_terms$FDR),
-      ,
-      drop = FALSE
-    ]
-
-    significant_terms <- head(
-      significant_terms,
-      15
-    )
-
-    enrichment_plot <- ggplot2::ggplot(
-
-      significant_terms,
-
-      ggplot2::aes(
-        x = GeneRatio,
-        y = reorder(Term, GeneRatio)
-      )
-
-    ) +
-
-      ggplot2::geom_point(
-
-        ggplot2::aes(
-          size = DE,
-          color = FDR
-        ),
-
-        alpha = 0.85
-
-      ) +
-
-      ggplot2::scale_color_gradient(
-        low = "#D7191C",
-        high = "#2C7BB6"
-      ) +
-
-      ggplot2::labs(
-        title = plot_title,
-        x = "Gene Ratio",
-        y = NULL,
-        color = "Adjusted p-value",
-        size = "Gene Count"
-      ) +
-
+  if (nrow(significant)) {
+    significant$GeneRatio <- significant$DE / significant$Input_Genes
+    significant <- head(significant[order(significant$FDR), , drop = FALSE], 15)
+    plot <- ggplot2::ggplot(significant, ggplot2::aes(GeneRatio, reorder(Term, GeneRatio))) +
+      ggplot2::geom_point(ggplot2::aes(size = DE, color = FDR), alpha = 0.85) +
+      ggplot2::scale_color_gradient(low = "#D7191C", high = "#2C7BB6") +
+      ggplot2::labs(title = plot_title, x = "Gene Ratio", y = NULL, color = "Adjusted p-value", size = "Gene Count") +
       ggplot2::theme_minimal(base_size = 11) +
-
       ggplot2::theme(
-        plot.title = ggplot2::element_text(
-          face = "bold"
-        ),
-        plot.background = ggplot2::element_rect(
-          fill = "white",
-          colour = NA
-        ),
-        panel.background = ggplot2::element_rect(
-          fill = "white",
-          colour = NA
-        )
+        plot.title = ggplot2::element_text(face = "bold"),
+        plot.background = ggplot2::element_rect(fill = "white", colour = NA),
+        panel.background = ggplot2::element_rect(fill = "white", colour = NA)
       )
-
   } else {
-
-    # Display a message when no terms pass the FDR threshold
-    enrichment_plot <- ggplot2::ggplot() +
-
-      ggplot2::annotate(
-        "text",
-        x = 0,
-        y = 0,
-        label = "No significantly enriched terms (FDR < 0.05)."
-      ) +
-
-      ggplot2::xlim(-1, 1) +
-
-      ggplot2::ylim(-1, 1) +
-
-      ggplot2::labs(title = plot_title) +
-
-      ggplot2::theme_void() +
-
+    plot <- ggplot2::ggplot() +
+      ggplot2::annotate("text", x = 0, y = 0, label = "No significantly enriched terms (FDR < 0.05).") +
+      ggplot2::xlim(-1, 1) + ggplot2::ylim(-1, 1) +
+      ggplot2::labs(title = plot_title) + ggplot2::theme_void() +
       ggplot2::theme(
-        plot.title = ggplot2::element_text(
-          face = "bold",
-          hjust = 0.5
-        ),
-        plot.background = ggplot2::element_rect(
-          fill = "white",
-          colour = NA
-        )
+        plot.title = ggplot2::element_text(face = "bold", hjust = 0.5),
+        plot.background = ggplot2::element_rect(fill = "white", colour = NA)
       )
-
   }
-
-  # Save plot
-  ggplot2::ggsave(
-    filename = output_file,
-    plot = enrichment_plot,
-    width = 10,
-    height = 7,
-    dpi = 300,
-    bg = "white"
-  )
-
-  enrichment_plot
-
+  ggplot2::ggsave(output_file, plot, width = 10, height = 7, dpi = 300, bg = "white")
+  plot
 }
 
-# Define output figure files
-enrichment_plot_files <- c(
-
-  GO_BP_All = file.path(
-    figure_dir,
-    "fig6_GO_BP_all_DEGs.png"
-  ),
-
-  GO_MF_All = file.path(
-    figure_dir,
-    "fig7_GO_MF_all_DEGs.png"
-  ),
-
-  GO_CC_All = file.path(
-    figure_dir,
-    "fig8_GO_CC_all_DEGs.png"
-  ),
-
-  GO_BP_Upregulated = file.path(
-    figure_dir,
-    "fig9_GO_BP_upregulated_DEGs.png"
-  ),
-
-  GO_BP_Downregulated = file.path(
-    figure_dir,
-    "fig10_GO_BP_downregulated_DEGs.png"
-  ),
-
-  KEGG_All = file.path(
-    figure_dir,
-    "fig11_KEGG_all_DEGs.png"
-  ),
-
-  KEGG_Upregulated = file.path(
-    figure_dir,
-    "fig12_KEGG_upregulated_DEGs.png"
-  ),
-
-  KEGG_Downregulated = file.path(
-    figure_dir,
-    "fig13_KEGG_downregulated_DEGs.png"
-  )
-
+figure_names <- c(
+  "fig6_GO_BP_all_DEGs.png", "fig7_GO_MF_all_DEGs.png", "fig8_GO_CC_all_DEGs.png",
+  "fig9_GO_BP_upregulated_DEGs.png", "fig10_GO_BP_downregulated_DEGs.png",
+  "fig11_KEGG_all_DEGs.png", "fig12_KEGG_upregulated_DEGs.png", "fig13_KEGG_downregulated_DEGs.png"
 )
+enrichment_plot_files <- setNames(file.path(figure_dir, figure_names), names(enrichment_results))
+enrichment_plots <- setNames(lapply(names(enrichment_results), function(nm) {
+  p <- create_enrichment_plot(enrichment_results[[nm]], paste("Enrichment Analysis:", gsub("_", " ", nm)), enrichment_plot_files[[nm]])
+  print(p)
+  p
+}), names(enrichment_results))
 
-# Generate enrichment figures
-enrichment_plots <- list()
+enrichment_rds_file <- file.path(data_dir, "GSE16561_functional_enrichment_results.rds")
+saveRDS(enrichment_results, enrichment_rds_file)
+verify_output_files(c(enrichment_csv_files, enrichment_summary_file, enrichment_plot_files, enrichment_rds_file))
 
-for (result_name in names(enrichment_plot_files)) {
-
-  enrichment_plots[[result_name]] <- create_enrichment_plot(
-
-    result_table = enrichment_results[[result_name]],
-
-    plot_title = paste(
-      "Enrichment Analysis:",
-      gsub("_", " ", result_name)
-    ),
-
-    output_file = enrichment_plot_files[[result_name]]
-
-  )
-
-  print(enrichment_plots[[result_name]])
-
-}
-
-# Save results for reproducibility
-enrichment_rds_file <- file.path(
-  data_dir,
-  "GSE16561_functional_enrichment_results.rds"
-)
-
-saveRDS(
-  enrichment_results,
-  enrichment_rds_file
-)
-
-# Verify all output files
-enrichment_required_files <- c(
-
-  enrichment_csv_files,
-
-  enrichment_summary_file,
-
-  enrichment_plot_files,
-
-  enrichment_rds_file
-
-)
-
-stopifnot(
-  all(file.exists(enrichment_required_files)),
-  all(file.info(enrichment_required_files)$size > 0)
-)
-
-# Display summary
-cat("\nFunctional Enrichment Summary\n")
-cat("-----------------------------\n")
-
-print(
-  enrichment_summary,
-  row.names = FALSE
-)
-
-cat("\nMapped background genes:", length(background_entrez), "\n")
-
-cat("Significant genes analysed:", length(significant_entrez), "\n")
-
-cat("Upregulated genes analysed:", length(upregulated_entrez), "\n")
-
-cat("Downregulated genes analysed:", length(downregulated_entrez), "\n")
-
-cat("\nAll enrichment output files verified.\n")
+cat("\nFunctional Enrichment Summary\n-----------------------------\n")
+print(enrichment_summary, row.names = FALSE)
+cat("\nMapped background genes:", length(background_entrez),
+    "\nSignificant genes analysed:", length(significant_entrez),
+    "\nUpregulated genes analysed:", length(upregulated_entrez),
+    "\nDownregulated genes analysed:", length(downregulated_entrez),
+    "\nAll enrichment output files verified.\n")
 ```
 
 # 5.7 Machine Learning Model Development
@@ -3055,7 +2352,6 @@ The out-of-fold predictions, tuning results and selected genes are saved
 for subsequent model evaluation.
 
 ```{r machine-learning-development}
-
 # Verify required packages
 ml_packages <- c(
   "glmnet",
@@ -3074,7 +2370,6 @@ ml_package_status <- vapply(
 if (!all(ml_package_status)) {
   stop("One or more required machine learning packages are missing.")
 }
-
 # Verify expression matrix and clinical metadata
 stopifnot(
   is.matrix(expr_gene),
@@ -3087,13 +2382,11 @@ stopifnot(
   sum(metadata$Group == "Control") == 24,
   sum(metadata$Group == "Stroke") == 39
 )
-
 # Set factor levels for classification
 metadata$Group <- factor(
   metadata$Group,
   levels = c("Control", "Stroke")
 )
-
 # Machine learning settings
 ml_seed <- 2026
 
@@ -3102,11 +2395,9 @@ number_outer_repeats <- 2
 number_inner_folds <- 3
 
 candidate_gene_counts <- c(10L, 20L)
-
 # --------------------------------------------------
 # Function 1: Create stratified cross-validation folds
 # --------------------------------------------------
-
 make_stratified_folds <- function(group, k, seed) {
 
   group <- factor(
@@ -3143,11 +2434,9 @@ make_stratified_folds <- function(group, k, seed) {
   )
 
 }
-
 # --------------------------------------------------
 # Function 2: Calculate ROC-AUC
 # --------------------------------------------------
-
 calculate_auc <- function(actual, predicted_probability) {
 
   actual <- as.character(actual)
@@ -3178,11 +2467,9 @@ calculate_auc <- function(actual, predicted_probability) {
   as.numeric(auc_value)
 
 }
-
 # --------------------------------------------------
 # Function 3: Select genes using training data only
 # --------------------------------------------------
-
 select_top_genes <- function(sample_indices) {
 
   training_metadata <- metadata[
@@ -3196,13 +2483,11 @@ select_top_genes <- function(sample_indices) {
     sample_indices,
     drop = FALSE
   ]
-
   # Create design matrix using training samples only
   training_design <- model.matrix(
     ~ Group,
     data = training_metadata
   )
-
   # Fit Limma model using training samples only
   training_fit <- limma::lmFit(
     training_expression,
@@ -3213,7 +2498,6 @@ select_top_genes <- function(sample_indices) {
     training_fit,
     robust = TRUE
   )
-
   # Rank genes by differential expression p-value
   ranked_results <- limma::topTable(
     training_fit,
@@ -3234,11 +2518,9 @@ select_top_genes <- function(sample_indices) {
   selected_genes
 
 }
-
 # --------------------------------------------------
 # Function 4: Fit classifier and obtain probabilities
 # --------------------------------------------------
-
 predict_classifier_probability <- function(
   model_name,
   training_x,
@@ -3254,42 +2536,28 @@ predict_classifier_probability <- function(
 
   validation_x <- as.matrix(validation_x)
   training_x <- as.matrix(training_x)
-
   # Elastic Net Logistic Regression
   if (model_name == "Elastic Net") {
 
     fitted_model <- glmnet::glmnet(
-
       x = training_x,
-
       y = as.integer(training_y == "Stroke"),
-
       family = "binomial",
-
       alpha = parameters$alpha,
-
       lambda = parameters$lambda,
-
       standardize = TRUE
-
     )
 
     predicted_probability <- predict(
-
       fitted_model,
-
       newx = validation_x,
-
       s = parameters$lambda,
-
       type = "response"
-
     )
 
     return(as.numeric(predicted_probability[, 1]))
 
   }
-
   # Scale data using training data only
   training_center <- colMeans(training_x)
 
@@ -3315,36 +2583,23 @@ predict_classifier_probability <- function(
     center = training_center,
     scale = training_scale
   )
-
   # Support Vector Machine
   if (model_name == "SVM") {
 
     fitted_model <- e1071::svm(
-
       x = scaled_training_x,
-
       y = training_y,
-
       kernel = "radial",
-
       cost = parameters$cost,
-
       gamma = parameters$gamma,
-
       probability = TRUE,
-
       scale = FALSE
-
     )
 
     svm_prediction <- predict(
-
       fitted_model,
-
       newdata = scaled_validation_x,
-
       probability = TRUE
-
     )
 
     svm_probabilities <- attr(
@@ -3364,7 +2619,6 @@ predict_classifier_probability <- function(
     )
 
   }
-
   # Random Forest
   if (model_name == "Random Forest") {
 
@@ -3380,29 +2634,18 @@ predict_classifier_probability <- function(
     )
 
     fitted_model <- randomForest::randomForest(
-
       x = training_x,
-
       y = training_y,
-
       ntree = 300,
-
       mtry = selected_mtry,
-
       nodesize = parameters$nodesize,
-
       importance = FALSE
-
     )
 
     rf_probabilities <- predict(
-
       fitted_model,
-
       newdata = validation_x,
-
       type = "prob"
-
     )
 
     return(
@@ -3414,11 +2657,9 @@ predict_classifier_probability <- function(
   stop("Unknown machine learning model.")
 
 }
-
 # --------------------------------------------------
 # Function 5: Tune model using inner cross-validation
 # --------------------------------------------------
-
 tune_classifier <- function(
   model_name,
   parameter_grid,
@@ -3473,43 +2714,29 @@ tune_classifier <- function(
       validation_y <- metadata$Group[
         fold_data$validation_indices
       ]
-
       # Fit and predict within this inner fold
       inner_auc[fold_index] <- tryCatch({
-
         set.seed(
           seed_base +
             candidate * 100 +
             fold_index
         )
-
         probability <- predict_classifier_probability(
-
           model_name = model_name,
-
           training_x = training_x,
-
           training_y = training_y,
-
           validation_x = validation_x,
-
           parameters = parameters
-
         )
-
         calculate_auc(
           validation_y,
           probability
         )
-
       }, error = function(e) {
-
         NA_real_
-
       })
 
     }
-
     # Require successful results from every inner fold
     mean_auc <- if (all(is.finite(inner_auc))) {
       mean(inner_auc)
@@ -3524,21 +2751,14 @@ tune_classifier <- function(
     }
 
     candidate_results[[candidate]] <- data.frame(
-
       Model = model_name,
-
       parameter_grid[candidate, , drop = FALSE],
-
       Mean_Inner_AUC = mean_auc,
-
       SD_Inner_AUC = sd_auc,
-
       Successful_Inner_Folds = sum(
         is.finite(inner_auc)
       ),
-
       stringsAsFactors = FALSE
-
     )
 
   }
@@ -3560,7 +2780,6 @@ tune_classifier <- function(
       )
     )
   }
-
   # Select the configuration with the highest mean inner AUC
   best_index <- valid_candidates[
     which.max(
@@ -3577,74 +2796,46 @@ tune_classifier <- function(
   )
 
   list(
-
     best_parameters = best_parameters,
-
     best_inner_auc = tuning_scores$Mean_Inner_AUC[
       best_index
     ],
-
     tuning_scores = tuning_scores
-
   )
 
 }
-
 # --------------------------------------------------
 # Define candidate parameter grids
 # --------------------------------------------------
-
 elastic_net_grid <- expand.grid(
-
   n_features = candidate_gene_counts,
-
   alpha = c(0.5, 1.0),
-
   lambda = c(0.001, 0.01, 0.1),
-
   KEEP.OUT.ATTRS = FALSE
-
 )
 
 svm_grid <- expand.grid(
-
   n_features = candidate_gene_counts,
-
   cost = c(0.1, 1, 10),
-
   gamma = c(0.01, 0.1),
-
   KEEP.OUT.ATTRS = FALSE
-
 )
 
 random_forest_grid <- expand.grid(
-
   n_features = candidate_gene_counts,
-
   mtry_fraction = c(0.2, 0.5),
-
   nodesize = c(1, 3),
-
   KEEP.OUT.ATTRS = FALSE
-
 )
-
 # Store parameter grids
 model_grids <- list(
-
   "Elastic Net" = elastic_net_grid,
-
   "SVM" = svm_grid,
-
   "Random Forest" = random_forest_grid
-
 )
-
 # --------------------------------------------------
 # Nested repeated cross-validation
 # --------------------------------------------------
-
 outer_prediction_results <- list()
 
 tuning_results_list <- list()
@@ -3664,16 +2855,11 @@ for (repeat_id in seq_len(number_outer_repeats)) {
     repeat_id,
     "\n"
   )
-
   # Create outer stratified folds
   outer_folds <- make_stratified_folds(
-
     group = metadata$Group,
-
     k = number_outer_folds,
-
     seed = ml_seed + repeat_id
-
   )
 
   for (outer_fold in seq_len(number_outer_folds)) {
@@ -3685,7 +2871,6 @@ for (repeat_id in seq_len(number_outer_repeats)) {
       outer_fold,
       "\n"
     )
-
     # Split outer training and validation samples
     outer_validation_indices <- outer_folds[[outer_fold]]
 
@@ -3693,63 +2878,40 @@ for (repeat_id in seq_len(number_outer_repeats)) {
       seq_len(number_samples),
       outer_validation_indices
     )
-
     # Create inner stratified folds within outer training data
     inner_folds <- make_stratified_folds(
-
       group = metadata$Group[
         outer_training_indices
       ],
-
       k = number_inner_folds,
-
       seed = ml_seed +
         repeat_id * 100 +
         outer_fold
-
     )
-
     # Precalculate gene rankings using each inner training fold
     inner_cache <- lapply(
-
       seq_along(inner_folds),
-
       function(inner_fold) {
-
         inner_validation_local <- inner_folds[[inner_fold]]
-
         inner_training_local <- setdiff(
-
           seq_along(outer_training_indices),
-
           inner_validation_local
-
         )
-
         inner_training_indices <- outer_training_indices[
           inner_training_local
         ]
-
         inner_validation_indices <- outer_training_indices[
           inner_validation_local
         ]
-
         list(
-
           training_indices = inner_training_indices,
-
           validation_indices = inner_validation_indices,
-
           ranked_genes = select_top_genes(
             inner_training_indices
           )
-
         )
-
       }
-
     )
-
     # Tune and evaluate each model
     for (model_name in names(model_grids)) {
 
@@ -3760,90 +2922,32 @@ for (repeat_id in seq_len(number_outer_repeats)) {
       )
 
       tuning_output <- tune_classifier(
-
         model_name = model_name,
-
         parameter_grid = model_grids[[model_name]],
-
         inner_cache = inner_cache,
-
         seed_base = ml_seed +
           repeat_id * 10000 +
           outer_fold * 1000
-
       )
-
-
-# Save inner tuning scores using a common table structure
+# Store tuning results in one consistent schema across all models
 tuning_table <- tuning_output$tuning_scores
-
+parameter_names <- c("alpha", "lambda", "cost", "gamma", "mtry_fraction", "nodesize")
+parameter_columns <- lapply(parameter_names, function(nm) {
+  if (nm %in% names(tuning_table)) as.numeric(tuning_table[[nm]]) else rep(NA_real_, nrow(tuning_table))
+})
+names(parameter_columns) <- c("Alpha", "Lambda", "Cost", "Gamma", "Mtry_Fraction", "Nodesize")
 tuning_results_list[[tuning_index]] <- data.frame(
-
-  Model = as.character(tuning_table$Model),
-
-  Repeat = repeat_id,
-
-  Outer_Fold = outer_fold,
-
-  N_Features = as.integer(tuning_table$n_features),
-
-  Alpha = if ("alpha" %in% names(tuning_table)) {
-    as.numeric(tuning_table$alpha)
-  } else {
-    rep(NA_real_, nrow(tuning_table))
-  },
-
-  Lambda = if ("lambda" %in% names(tuning_table)) {
-    as.numeric(tuning_table$lambda)
-  } else {
-    rep(NA_real_, nrow(tuning_table))
-  },
-
-  Cost = if ("cost" %in% names(tuning_table)) {
-    as.numeric(tuning_table$cost)
-  } else {
-    rep(NA_real_, nrow(tuning_table))
-  },
-
-  Gamma = if ("gamma" %in% names(tuning_table)) {
-    as.numeric(tuning_table$gamma)
-  } else {
-    rep(NA_real_, nrow(tuning_table))
-  },
-
-  Mtry_Fraction = if ("mtry_fraction" %in% names(tuning_table)) {
-    as.numeric(tuning_table$mtry_fraction)
-  } else {
-    rep(NA_real_, nrow(tuning_table))
-  },
-
-  Nodesize = if ("nodesize" %in% names(tuning_table)) {
-    as.numeric(tuning_table$nodesize)
-  } else {
-    rep(NA_real_, nrow(tuning_table))
-  },
-
-  Mean_Inner_AUC = as.numeric(
-    tuning_table$Mean_Inner_AUC
-  ),
-
-  SD_Inner_AUC = as.numeric(
-    tuning_table$SD_Inner_AUC
-  ),
-
-  Successful_Inner_Folds = as.integer(
-    tuning_table$Successful_Inner_Folds
-  ),
-
+  Model = as.character(tuning_table$Model), Repeat = repeat_id,
+  Outer_Fold = outer_fold, N_Features = as.integer(tuning_table$n_features),
+  parameter_columns,
+  Mean_Inner_AUC = as.numeric(tuning_table$Mean_Inner_AUC),
+  SD_Inner_AUC = as.numeric(tuning_table$SD_Inner_AUC),
+  Successful_Inner_Folds = as.integer(tuning_table$Successful_Inner_Folds),
   stringsAsFactors = FALSE
-
 )
-
 tuning_index <- tuning_index + 1
 
-
       best_parameters <- tuning_output$best_parameters
-
       # Perform gene selection again using the complete outer training set
       outer_ranked_genes <- select_top_genes(
         outer_training_indices
@@ -3852,26 +2956,21 @@ tuning_index <- tuning_index + 1
       final_genes <- outer_ranked_genes[
         seq_len(best_parameters$n_features)
       ]
-
       # Construct outer training and validation expression matrices
       outer_training_x <- t(
-
         expr_gene[
           final_genes,
           outer_training_indices,
           drop = FALSE
         ]
-
       )
 
       outer_validation_x <- t(
-
         expr_gene[
           final_genes,
           outer_validation_indices,
           drop = FALSE
         ]
-
       )
 
       outer_training_y <- metadata$Group[
@@ -3881,29 +2980,20 @@ tuning_index <- tuning_index + 1
       outer_validation_y <- metadata$Group[
         outer_validation_indices
       ]
-
       # Fit the selected model and predict outer validation samples
       set.seed(
-
         ml_seed +
           repeat_id * 100000 +
           outer_fold * 1000 +
           match(model_name, names(model_grids))
-
       )
 
       outer_probabilities <- predict_classifier_probability(
-
         model_name = model_name,
-
         training_x = outer_training_x,
-
         training_y = outer_training_y,
-
         validation_x = outer_validation_x,
-
         parameters = best_parameters
-
       )
 
       if (
@@ -3920,55 +3010,37 @@ tuning_index <- tuning_index + 1
         )
 
       }
-
       # Save out-of-fold predictions
       outer_prediction_results[[prediction_index]] <- data.frame(
-
         Repeat = repeat_id,
-
         Outer_Fold = outer_fold,
-
         Sample_ID = metadata$Sample_ID[
           outer_validation_indices
         ],
-
         Actual = as.character(
           outer_validation_y
         ),
-
         Model = model_name,
-
         Probability_Stroke = as.numeric(
           outer_probabilities
         ),
-
         Predicted_Class = ifelse(
           outer_probabilities >= 0.5,
           "Stroke",
           "Control"
         ),
-
         stringsAsFactors = FALSE
-
       )
 
       prediction_index <- prediction_index + 1
-
       # Save selected genes for reproducibility
       selected_features_list[[feature_index]] <- data.frame(
-
         Repeat = repeat_id,
-
         Outer_Fold = outer_fold,
-
         Model = model_name,
-
         Feature_Rank = seq_along(final_genes),
-
         Gene_Symbol = final_genes,
-
         stringsAsFactors = FALSE
-
       )
 
       feature_index <- feature_index + 1
@@ -3984,11 +3056,9 @@ tuning_index <- tuning_index + 1
   }
 
 }
-
 # --------------------------------------------------
 # Combine and export results
 # --------------------------------------------------
-
 ml_outer_predictions <- do.call(
   rbind,
   outer_prediction_results
@@ -4007,7 +3077,6 @@ ml_selected_features <- do.call(
 rownames(ml_outer_predictions) <- NULL
 rownames(ml_tuning_results) <- NULL
 rownames(ml_selected_features) <- NULL
-
 # Verify prediction structure
 expected_prediction_rows <- (
   number_samples *
@@ -4016,21 +3085,15 @@ expected_prediction_rows <- (
 )
 
 stopifnot(
-
   nrow(ml_outer_predictions) ==
     expected_prediction_rows,
-
   !anyNA(ml_outer_predictions$Probability_Stroke),
-
   all(
     ml_outer_predictions$Probability_Stroke >= 0 &
       ml_outer_predictions$Probability_Stroke <= 1
   ),
-
   length(unique(ml_outer_predictions$Model)) == 3
-
 )
-
 # Define output files
 ml_prediction_file <- file.path(
   data_dir,
@@ -4051,31 +3114,26 @@ ml_settings_file <- file.path(
   data_dir,
   "GSE16561_ml_model_settings.csv"
 )
-
 # Export out-of-fold predictions
 write.csv(
   ml_outer_predictions,
   ml_prediction_file,
   row.names = FALSE
 )
-
 # Export tuning results
 write.csv(
   ml_tuning_results,
   ml_tuning_file,
   row.names = FALSE
 )
-
 # Export selected genes
 write.csv(
   ml_selected_features,
   ml_features_file,
   row.names = FALSE
 )
-
 # Record model development settings
 ml_model_settings <- data.frame(
-
   Setting = c(
     "Dataset",
     "Number of samples",
@@ -4092,7 +3150,6 @@ ml_model_settings <- data.frame(
     "Support Vector Machine",
     "Random Forest"
   ),
-
   Value = c(
     "GSE16561",
     nrow(metadata),
@@ -4109,9 +3166,7 @@ ml_model_settings <- data.frame(
     "Radial Basis Function Kernel",
     "300 trees"
   ),
-
   stringsAsFactors = FALSE
-
 )
 
 write.csv(
@@ -4119,7 +3174,6 @@ write.csv(
   ml_settings_file,
   row.names = FALSE
 )
-
 # Save complete development results for later evaluation
 ml_results_rds <- file.path(
   data_dir,
@@ -4127,46 +3181,24 @@ ml_results_rds <- file.path(
 )
 
 saveRDS(
-
   list(
-
     predictions = ml_outer_predictions,
-
     tuning_results = ml_tuning_results,
-
     selected_features = ml_selected_features,
-
     model_settings = ml_model_settings
-
   ),
-
   ml_results_rds
-
 )
-
 # Verify all output files
 ml_output_files <- c(
-
   ml_prediction_file,
-
   ml_tuning_file,
-
   ml_features_file,
-
   ml_settings_file,
-
   ml_results_rds
-
 )
 
-stopifnot(
-
-  all(file.exists(ml_output_files)),
-
-  all(file.info(ml_output_files)$size > 0)
-
-)
-
+verify_output_files(ml_output_files)
 # Display model development summary
 cat("\nMachine Learning Development Summary\n")
 
@@ -4213,7 +3245,6 @@ print(
 )
 
 cat("\nAll machine learning output files verified.\n")
-
 ```
 
 # 5.8 Evaluation of Machine Learning Models
@@ -4231,11 +3262,9 @@ The outer-fold predictions were used for evaluation rather than the
 inner cross-validation scores used during hyperparameter tuning.
 
 ```{r machine-learning-evaluation, message=FALSE, warning=FALSE}
-
 # --------------------------------------------------
 # Load and validate outer-fold predictions
 # --------------------------------------------------
-
 ml_eval_predictions <- read.csv(
   ml_prediction_file,
   stringsAsFactors = FALSE
@@ -4260,7 +3289,6 @@ stopifnot(
     ml_eval_predictions$Predicted_Class %in% c("Control", "Stroke")
   )
 )
-
 # Separate predictions by model and repeat
 evaluation_groups <- split(
   ml_eval_predictions,
@@ -4270,80 +3298,34 @@ evaluation_groups <- split(
   ),
   drop = TRUE
 )
-
 # --------------------------------------------------
 # Calculate performance metrics
 # --------------------------------------------------
-
 calculate_performance <- function(prediction_data) {
+  actual <- factor(prediction_data$Actual, levels = c("Control", "Stroke"))
+  predicted <- factor(prediction_data$Predicted_Class, levels = c("Control", "Stroke"))
+  cm <- table(actual, predicted)
+  TN <- unname(cm["Control", "Control"])
+  FP <- unname(cm["Control", "Stroke"])
+  FN <- unname(cm["Stroke", "Control"])
+  TP <- unname(cm["Stroke", "Stroke"])
 
-  actual <- prediction_data$Actual
-  predicted <- prediction_data$Predicted_Class
-  probability <- prediction_data$Probability_Stroke
-
-  TP <- sum(actual == "Stroke" & predicted == "Stroke")
-  TN <- sum(actual == "Control" & predicted == "Control")
-  FP <- sum(actual == "Control" & predicted == "Stroke")
-  FN <- sum(actual == "Stroke" & predicted == "Control")
-
-  accuracy <- (TP + TN) / (TP + TN + FP + FN)
-
-  sensitivity <- if ((TP + FN) > 0) {
-    TP / (TP + FN)
-  } else {
-    NA_real_
-  }
-
-  specificity <- if ((TN + FP) > 0) {
-    TN / (TN + FP)
-  } else {
-    NA_real_
-  }
-
-  precision <- if ((TP + FP) > 0) {
-    TP / (TP + FP)
-  } else {
-    0
-  }
-
-  f1_score <- if ((precision + sensitivity) > 0) {
-    2 * precision * sensitivity /
-      (precision + sensitivity)
-  } else {
-    0
-  }
-
-  # Calculate ROC-AUC using the Mann-Whitney rank statistic
-  positive_count <- sum(actual == "Stroke")
-  negative_count <- sum(actual == "Control")
-
-  probability_ranks <- rank(
-    probability,
-    ties.method = "average"
-  )
-
-  roc_auc <- (
-    sum(probability_ranks[actual == "Stroke"]) -
-      positive_count * (positive_count + 1) / 2
-  ) / (positive_count * negative_count)
+  accuracy <- (TP + TN) / sum(cm)
+  sensitivity <- if (TP + FN > 0) TP / (TP + FN) else NA_real_
+  specificity <- if (TN + FP > 0) TN / (TN + FP) else NA_real_
+  precision <- if (TP + FP > 0) TP / (TP + FP) else 0
+  f1_score <- if (is.finite(sensitivity) && precision + sensitivity > 0) {
+    2 * precision * sensitivity / (precision + sensitivity)
+  } else 0
 
   data.frame(
-    Model = prediction_data$Model[1],
-    Repeat = prediction_data$Repeat[1],
-    Samples = nrow(prediction_data),
-    TP = TP,
-    TN = TN,
-    FP = FP,
-    FN = FN,
-    Accuracy = accuracy,
-    Sensitivity = sensitivity,
-    Specificity = specificity,
-    Precision = precision,
-    F1_Score = f1_score,
-    ROC_AUC = roc_auc
+    Model = prediction_data$Model[1], Repeat = prediction_data$Repeat[1],
+    Samples = nrow(prediction_data), TP = TP, TN = TN, FP = FP, FN = FN,
+    Accuracy = accuracy, Sensitivity = sensitivity, Specificity = specificity,
+    Precision = precision, F1_Score = f1_score,
+    ROC_AUC = calculate_auc(actual, prediction_data$Probability_Stroke)
   )
 }
-
 # Calculate metrics for every model and repeat
 performance_by_repeat <- do.call(
   rbind,
@@ -4354,11 +3336,9 @@ performance_by_repeat <- do.call(
 )
 
 rownames(performance_by_repeat) <- NULL
-
 # --------------------------------------------------
 # Summarise performance across the two repeats
 # --------------------------------------------------
-
 metric_columns <- c(
   "Accuracy",
   "Sensitivity",
@@ -4376,31 +3356,23 @@ model_groups <- split(
 performance_summary <- do.call(
   rbind,
   lapply(model_groups, function(model_data) {
-
     summary_row <- data.frame(
       Model = model_data$Model[1]
     )
-
     for (metric in metric_columns) {
-
       summary_row[[paste0(metric, "_Mean")]] <-
         mean(model_data[[metric]], na.rm = TRUE)
-
       summary_row[[paste0(metric, "_SD")]] <-
         sd(model_data[[metric]], na.rm = TRUE)
-
     }
-
     summary_row
   })
 )
 
 rownames(performance_summary) <- NULL
-
 # --------------------------------------------------
 # Export evaluation results
 # --------------------------------------------------
-
 performance_file <- file.path(
   data_dir,
   "GSE16561_ml_performance_by_repeat.csv"
@@ -4422,24 +3394,19 @@ write.csv(
   performance_summary_file,
   row.names = FALSE
 )
-
 # --------------------------------------------------
 # Generate ROC curves for both repeats
 # --------------------------------------------------
-
 roc_curve_list <- lapply(
   evaluation_groups,
   function(prediction_data) {
-
     actual <- prediction_data$Actual
     probability <- prediction_data$Probability_Stroke
-
     thresholds <- c(
       Inf,
       sort(unique(probability), decreasing = TRUE),
       -Inf
     )
-
     data.frame(
       FPR = vapply(
         thresholds,
@@ -4469,7 +3436,6 @@ roc_plot_data <- do.call(
   rbind,
   roc_curve_list
 )
-
 # Create ROC plot
 ml_roc_plot <- ggplot2::ggplot(
   roc_plot_data,
@@ -4509,7 +3475,6 @@ ml_roc_plot <- ggplot2::ggplot(
       hjust = 0.5
     )
   )
-
 # Save ROC figure
 ml_roc_file <- file.path(
   figure_dir,
@@ -4524,51 +3489,20 @@ ggplot2::ggsave(
   dpi = 300,
   bg = "white"
 )
-
-
 # Display evaluation results
 cat("Performance by model and repeat:\n")
+# Round numeric columns without changing the exported full-precision values
+round_numeric_columns <- function(x, digits = 4) {
+  is_numeric <- vapply(x, is.numeric, logical(1))
+  x[is_numeric] <- lapply(x[is_numeric], round, digits = digits)
+  x
+}
 
-# Round numeric columns only
-performance_by_repeat_display <- performance_by_repeat
-
-numeric_columns <- vapply(
-  performance_by_repeat_display,
-  is.numeric,
-  logical(1)
-)
-
-performance_by_repeat_display[numeric_columns] <- lapply(
-  performance_by_repeat_display[numeric_columns],
-  round,
-  digits = 4
-)
-
-print(performance_by_repeat_display)
-
+print(round_numeric_columns(performance_by_repeat))
 cat("\nMean performance and standard deviation:\n")
-
-# Round numeric columns in the summary table
-performance_summary_display <- performance_summary
-
-numeric_columns <- vapply(
-  performance_summary_display,
-  is.numeric,
-  logical(1)
-)
-
-performance_summary_display[numeric_columns] <- lapply(
-  performance_summary_display[numeric_columns],
-  round,
-  digits = 4
-)
-
-print(performance_summary_display)
-
-
+print(round_numeric_columns(performance_summary))
 # Display ROC curves
 knitr::include_graphics(ml_roc_file)
-
 # Verify evaluation outputs
 evaluation_files <- c(
   performance_file,
@@ -4576,15 +3510,10 @@ evaluation_files <- c(
   ml_roc_file
 )
 
-stopifnot(
-  nrow(performance_by_repeat) == 6,
-  nrow(performance_summary) == 3,
-  all(file.exists(evaluation_files)),
-  all(file.info(evaluation_files)$size > 0)
-)
+stopifnot(nrow(performance_by_repeat) == 6, nrow(performance_summary) == 3)
+verify_output_files(evaluation_files)
 
 cat("\nMachine learning evaluation completed successfully.\n")
-
 ```
 
 
@@ -4593,7 +3522,5 @@ cat("\nMachine learning evaluation completed successfully.\n")
 The R session and package versions are recorded to support reproducibility of the analysis.
 
 ```{r session-information}
-
 sessionInfo()
-
 ```
