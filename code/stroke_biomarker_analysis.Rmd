@@ -1261,7 +1261,7 @@ correlation_file <- file.path(
 
 
 # Generate a cleaner correlation heatmap
-pheatmap(
+correlation_heatmap <- pheatmap(
   sample_correlation,
   color = colorRampPalette(
     c("#2166AC", "white", "#B2182B")
@@ -1288,11 +1288,21 @@ pheatmap(
 
   main = "Sample-to-Sample Pearson Correlation",
 
+silent = TRUE
+)
+# Save the heatmap using an explicitly managed device
+grDevices::png(
   filename = correlation_file,
-  width = 12,
-  height = 11
+  width = 2400,
+  height = 2200,
+  res = 200,
+  bg = "white"
 )
 
+grid::grid.newpage()
+grid::grid.draw(correlation_heatmap$gtable)
+
+grDevices::dev.off()
 
 # Export correlation matrix
 write.csv(
@@ -4205,6 +4215,378 @@ print(
 cat("\nAll machine learning output files verified.\n")
 
 ```
+
+# 5.8 Evaluation of Machine Learning Models
+
+The predictive performance of the Elastic Net Logistic Regression,
+Support Vector Machine (SVM), and Random Forest models was evaluated
+using the predictions generated from the outer repeated stratified
+five-fold cross-validation procedure.
+
+Performance was calculated separately for each of the two outer
+cross-validation repeats. The evaluation measures include accuracy,
+sensitivity, specificity, precision, F1-score, and ROC-AUC.
+
+The outer-fold predictions were used for evaluation rather than the
+inner cross-validation scores used during hyperparameter tuning.
+
+```{r machine-learning-evaluation, message=FALSE, warning=FALSE}
+
+# --------------------------------------------------
+# Load and validate outer-fold predictions
+# --------------------------------------------------
+
+ml_eval_predictions <- read.csv(
+  ml_prediction_file,
+  stringsAsFactors = FALSE
+)
+
+required_columns <- c(
+  "Repeat",
+  "Sample_ID",
+  "Actual",
+  "Model",
+  "Probability_Stroke",
+  "Predicted_Class"
+)
+
+stopifnot(
+  all(required_columns %in% names(ml_eval_predictions)),
+  !anyNA(ml_eval_predictions$Probability_Stroke),
+  all(
+    ml_eval_predictions$Actual %in% c("Control", "Stroke")
+  ),
+  all(
+    ml_eval_predictions$Predicted_Class %in% c("Control", "Stroke")
+  )
+)
+
+# Separate predictions by model and repeat
+evaluation_groups <- split(
+  ml_eval_predictions,
+  list(
+    ml_eval_predictions$Model,
+    ml_eval_predictions$Repeat
+  ),
+  drop = TRUE
+)
+
+# --------------------------------------------------
+# Calculate performance metrics
+# --------------------------------------------------
+
+calculate_performance <- function(prediction_data) {
+
+  actual <- prediction_data$Actual
+  predicted <- prediction_data$Predicted_Class
+  probability <- prediction_data$Probability_Stroke
+
+  TP <- sum(actual == "Stroke" & predicted == "Stroke")
+  TN <- sum(actual == "Control" & predicted == "Control")
+  FP <- sum(actual == "Control" & predicted == "Stroke")
+  FN <- sum(actual == "Stroke" & predicted == "Control")
+
+  accuracy <- (TP + TN) / (TP + TN + FP + FN)
+
+  sensitivity <- if ((TP + FN) > 0) {
+    TP / (TP + FN)
+  } else {
+    NA_real_
+  }
+
+  specificity <- if ((TN + FP) > 0) {
+    TN / (TN + FP)
+  } else {
+    NA_real_
+  }
+
+  precision <- if ((TP + FP) > 0) {
+    TP / (TP + FP)
+  } else {
+    0
+  }
+
+  f1_score <- if ((precision + sensitivity) > 0) {
+    2 * precision * sensitivity /
+      (precision + sensitivity)
+  } else {
+    0
+  }
+
+  # Calculate ROC-AUC using the Mann-Whitney rank statistic
+  positive_count <- sum(actual == "Stroke")
+  negative_count <- sum(actual == "Control")
+
+  probability_ranks <- rank(
+    probability,
+    ties.method = "average"
+  )
+
+  roc_auc <- (
+    sum(probability_ranks[actual == "Stroke"]) -
+      positive_count * (positive_count + 1) / 2
+  ) / (positive_count * negative_count)
+
+  data.frame(
+    Model = prediction_data$Model[1],
+    Repeat = prediction_data$Repeat[1],
+    Samples = nrow(prediction_data),
+    TP = TP,
+    TN = TN,
+    FP = FP,
+    FN = FN,
+    Accuracy = accuracy,
+    Sensitivity = sensitivity,
+    Specificity = specificity,
+    Precision = precision,
+    F1_Score = f1_score,
+    ROC_AUC = roc_auc
+  )
+}
+
+# Calculate metrics for every model and repeat
+performance_by_repeat <- do.call(
+  rbind,
+  lapply(
+    evaluation_groups,
+    calculate_performance
+  )
+)
+
+rownames(performance_by_repeat) <- NULL
+
+# --------------------------------------------------
+# Summarise performance across the two repeats
+# --------------------------------------------------
+
+metric_columns <- c(
+  "Accuracy",
+  "Sensitivity",
+  "Specificity",
+  "Precision",
+  "F1_Score",
+  "ROC_AUC"
+)
+
+model_groups <- split(
+  performance_by_repeat,
+  performance_by_repeat$Model
+)
+
+performance_summary <- do.call(
+  rbind,
+  lapply(model_groups, function(model_data) {
+
+    summary_row <- data.frame(
+      Model = model_data$Model[1]
+    )
+
+    for (metric in metric_columns) {
+
+      summary_row[[paste0(metric, "_Mean")]] <-
+        mean(model_data[[metric]], na.rm = TRUE)
+
+      summary_row[[paste0(metric, "_SD")]] <-
+        sd(model_data[[metric]], na.rm = TRUE)
+
+    }
+
+    summary_row
+  })
+)
+
+rownames(performance_summary) <- NULL
+
+# --------------------------------------------------
+# Export evaluation results
+# --------------------------------------------------
+
+performance_file <- file.path(
+  data_dir,
+  "GSE16561_ml_performance_by_repeat.csv"
+)
+
+performance_summary_file <- file.path(
+  data_dir,
+  "GSE16561_ml_performance_summary.csv"
+)
+
+write.csv(
+  performance_by_repeat,
+  performance_file,
+  row.names = FALSE
+)
+
+write.csv(
+  performance_summary,
+  performance_summary_file,
+  row.names = FALSE
+)
+
+# --------------------------------------------------
+# Generate ROC curves for both repeats
+# --------------------------------------------------
+
+roc_curve_list <- lapply(
+  evaluation_groups,
+  function(prediction_data) {
+
+    actual <- prediction_data$Actual
+    probability <- prediction_data$Probability_Stroke
+
+    thresholds <- c(
+      Inf,
+      sort(unique(probability), decreasing = TRUE),
+      -Inf
+    )
+
+    data.frame(
+      FPR = vapply(
+        thresholds,
+        function(threshold) {
+          mean(
+            probability[actual == "Control"] >= threshold
+          )
+        },
+        numeric(1)
+      ),
+      TPR = vapply(
+        thresholds,
+        function(threshold) {
+          mean(
+            probability[actual == "Stroke"] >= threshold
+          )
+        },
+        numeric(1)
+      ),
+      Model = prediction_data$Model[1],
+      Repeat = factor(prediction_data$Repeat[1])
+    )
+  }
+)
+
+roc_plot_data <- do.call(
+  rbind,
+  roc_curve_list
+)
+
+# Create ROC plot
+ml_roc_plot <- ggplot2::ggplot(
+  roc_plot_data,
+  ggplot2::aes(
+    x = FPR,
+    y = TPR,
+    colour = Model,
+    linetype = Repeat,
+    group = interaction(Model, Repeat)
+  )
+) +
+  ggplot2::geom_path(linewidth = 1) +
+  ggplot2::geom_abline(
+    intercept = 0,
+    slope = 1,
+    linetype = "dashed",
+    colour = "grey50"
+  ) +
+  ggplot2::coord_equal() +
+  ggplot2::labs(
+    title = "ROC Curves of Machine Learning Models",
+    subtitle = "Outer repeated stratified five-fold cross-validation",
+    x = "False Positive Rate",
+    y = "True Positive Rate",
+    colour = "Model",
+    linetype = "Repeat"
+  ) +
+  ggplot2::theme_minimal(
+    base_size = 12
+  ) +
+  ggplot2::theme(
+    plot.title = ggplot2::element_text(
+      face = "bold",
+      hjust = 0.5
+    ),
+    plot.subtitle = ggplot2::element_text(
+      hjust = 0.5
+    )
+  )
+
+# Save ROC figure
+ml_roc_file <- file.path(
+  figure_dir,
+  "fig14_ml_roc_curves.png"
+)
+
+ggplot2::ggsave(
+  filename = ml_roc_file,
+  plot = ml_roc_plot,
+  width = 10,
+  height = 7,
+  dpi = 300,
+  bg = "white"
+)
+
+
+# Display evaluation results
+cat("Performance by model and repeat:\n")
+
+# Round numeric columns only
+performance_by_repeat_display <- performance_by_repeat
+
+numeric_columns <- vapply(
+  performance_by_repeat_display,
+  is.numeric,
+  logical(1)
+)
+
+performance_by_repeat_display[numeric_columns] <- lapply(
+  performance_by_repeat_display[numeric_columns],
+  round,
+  digits = 4
+)
+
+print(performance_by_repeat_display)
+
+cat("\nMean performance and standard deviation:\n")
+
+# Round numeric columns in the summary table
+performance_summary_display <- performance_summary
+
+numeric_columns <- vapply(
+  performance_summary_display,
+  is.numeric,
+  logical(1)
+)
+
+performance_summary_display[numeric_columns] <- lapply(
+  performance_summary_display[numeric_columns],
+  round,
+  digits = 4
+)
+
+print(performance_summary_display)
+
+
+# Display ROC curves
+knitr::include_graphics(ml_roc_file)
+
+# Verify evaluation outputs
+evaluation_files <- c(
+  performance_file,
+  performance_summary_file,
+  ml_roc_file
+)
+
+stopifnot(
+  nrow(performance_by_repeat) == 6,
+  nrow(performance_summary) == 3,
+  all(file.exists(evaluation_files)),
+  all(file.info(evaluation_files)$size > 0)
+)
+
+cat("\nMachine learning evaluation completed successfully.\n")
+
+```
+
 
 ## 6. Reproducibility Information
 
