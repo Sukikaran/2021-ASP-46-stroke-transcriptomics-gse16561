@@ -1,15 +1,13 @@
 # Transcriptomic Biomarker Discovery and Machine Learning Classification in Acute Ischemic Stroke (GSE16561)
 
-**Student:** K. Sukikaran<br>
-**Registration number:** 2021/ASP/46<br>
-**Programme:** BSc (Hons) Computer Science, University of Vavuniya<br>
+**Student:** K. Sukikaran  
+**Registration number:** 2021/ASP/46  
+**Programme:** BSc (Hons) Computer Science, University of Vavuniya  
 **Project type:** Reproducible computational reanalysis of public transcriptomic data
 
 ## View the Full Analysis Report
 
-The complete R Markdown analysis, including source code, 
-statistical results, visualisations and machine-learning 
-evaluation, is available as a published HTML report.
+The complete R Markdown analysis, including source code, statistical results, visualisations and machine-learning evaluation, is available as a published HTML report.
 
 **[View the Full Bioinformatics Analysis Report](https://sukikaran.github.io/2021-ASP-46-stroke-transcriptomics-gse16561/)**
 
@@ -57,23 +55,23 @@ The classifiers were Elastic Net logistic regression (`glmnet`) [5], radial-kern
 
 The final matrix contained 17,494 genes and 63 samples. Mean expression was -0.0109 (SD 0.3817). PC1 and PC2 explained 48.12% and 15.06% of variance, respectively (63.18% combined), but the PCA showed overlap between groups. Sample correlations ranged from -0.7218 to 0.8515 (mean 0.0047), and the heatmap did not show perfectly group-specific clusters. EDA alone therefore did not clearly separate Stroke from Control.
 
-**Figure 1.** Expression distributions across samples.<br>
+**Figure 1.** Expression distributions across samples.  
 ![Gene expression boxplot](figures/fig1_expression_boxplot.png)
 
-**Figure 2.** Density distributions of gene expression across samples.<br>
+**Figure 2.** Density distributions of gene expression across samples.  
 ![Gene expression density](figures/fig2_expression_density.png)
 
-**Figure 3.** PCA of the 500 most variable genes.<br>
+**Figure 3.** PCA of the 500 most variable genes.  
 ![PCA plot](figures/fig3_pca_plot.png)
 
-**Figure 4.** Sample-to-sample correlation heatmap with group annotations.<br>
+**Figure 4.** Sample-to-sample correlation heatmap with group annotations.  
 ![Sample correlation heatmap](figures/fig4_sample_correlation_heatmap.png)
 
 ### 4.2 Differentially expressed genes
 
 Limma tested 17,494 genes. At FDR below 0.05, 2,779 were significant: 1,443 upregulated and 1,336 downregulated in Stroke; 14,715 were not significant. ANTXR2 ranked first (log2 fold change 0.8183; p = 5.80 × 10⁻¹⁵; adjusted p = 1.01 × 10⁻¹⁰). Other highly ranked genes included LAMP2, CTSS, RGS2, PLXDC2 and DOCK8. These associations do not validate individual genes as diagnostic markers.
 
-**Figure 5.** Volcano plot of the Stroke-versus-Control differential expression results.<br>
+**Figure 5.** Volcano plot of the Stroke-versus-Control differential expression results.  
 ![Differential expression volcano plot](figures/fig5_volcano_plot.png)
 
 ### 4.3 Gene mapping and enrichment
@@ -84,28 +82,28 @@ Eight enrichment analyses completed. For all DEGs, GO returned 15,196 Biological
 
 The findings included immune and innate-defence themes among upregulated genes and metabolic, RNA-processing, translation and ribosome-related themes among downregulated genes. KEGG results included phagosome, lysosome, lipid/atherosclerosis, neutrophil extracellular trap formation and ribosome pathways. Enrichment measures over-representation; it does not prove pathway activation, inhibition or causality.
 
-**Figure 6.** GO Biological Process enrichment for all significant DEGs.<br>
+**Figure 6.** GO Biological Process enrichment for all significant DEGs.  
 ![GO BP all DEGs](figures/fig6_GO_BP_all_DEGs.png)
 
-**Figure 7.** GO Molecular Function enrichment for all significant DEGs.<br>
+**Figure 7.** GO Molecular Function enrichment for all significant DEGs.  
 ![GO MF all DEGs](figures/fig7_GO_MF_all_DEGs.png)
 
-**Figure 8.** GO Cellular Component enrichment for all significant DEGs.<br>
+**Figure 8.** GO Cellular Component enrichment for all significant DEGs.  
 ![GO CC all DEGs](figures/fig8_GO_CC_all_DEGs.png)
 
-**Figure 9.** GO Biological Process enrichment for upregulated DEGs.<br>
+**Figure 9.** GO Biological Process enrichment for upregulated DEGs.  
 ![GO BP upregulated DEGs](figures/fig9_GO_BP_upregulated_DEGs.png)
 
-**Figure 10.** GO Biological Process enrichment for downregulated DEGs.<br>
+**Figure 10.** GO Biological Process enrichment for downregulated DEGs.  
 ![GO BP downregulated DEGs](figures/fig10_GO_BP_downregulated_DEGs.png)
 
-**Figure 11.** KEGG pathway enrichment for all significant DEGs.<br>
+**Figure 11.** KEGG pathway enrichment for all significant DEGs.  
 ![KEGG all DEGs](figures/fig11_KEGG_all_DEGs.png)
 
-**Figure 12.** KEGG pathway enrichment for upregulated DEGs.<br>
+**Figure 12.** KEGG pathway enrichment for upregulated DEGs.  
 ![KEGG upregulated DEGs](figures/fig12_KEGG_upregulated_DEGs.png)
 
-**Figure 13.** KEGG pathway enrichment for downregulated DEGs.<br>
+**Figure 13.** KEGG pathway enrichment for downregulated DEGs.  
 ![KEGG downregulated DEGs](figures/fig13_KEGG_downregulated_DEGs.png)
 
 ### 4.4 Machine-learning performance
@@ -120,7 +118,7 @@ The nested cross-validation procedure generated 378 outer validation predictions
 
 The results show high internal discrimination in this dataset, although the relative ranking depends on the metric: Elastic Net had the strongest threshold-based metrics, while Random Forest had the highest mean ROC-AUC. The two-repeat validation provides an internal estimate only. It does not establish that the models will perform similarly in a new hospital, population, platform or clinical setting.
 
-**Figure 14.** ROC curves from the outer cross-validation predictions.<br>
+**Figure 14.** ROC curves from the outer cross-validation predictions.  
 ![Machine-learning ROC curves](figures/fig14_ml_roc_curves.png)
 
 ## 5. Discussion
@@ -144,17 +142,30 @@ stroke-transcriptomics-gse16561/
 ├── README.md
 ├── code/
 │   ├── stroke_biomarker_analysis.Rmd
-│   └── stroke_biomarker_analysis.html
+│   ├── stroke_biomarker_analysis.html
+│   └── R/
+│       ├── 00_packages.R
+│       ├── 01_data_acquisition.R
+│       ├── 02_preprocessing_annotation.R
+│       ├── 03_exploratory_analysis.R
+│       ├── 04_differential_expression.R
+│       ├── 05_gene_enrichment.R
+│       ├── 06_machine_learning.R
+│       └── 07_reproducibility.R
 ├── data/
+├── docs/
+│   └── index.html
 ├── figures/
 └── stroke-transcriptomics-gse16561.Rproj
 ```
+
+The analysis code is organised into labelled workflow scripts in `code/R/`. The R Markdown entry point registers these chunks with `knitr::read_chunk()` and executes them in sequence, keeping the code visible in the rendered report. Knit `code/stroke_biomarker_analysis.Rmd` as the entry point rather than sourcing the numbered scripts individually.
 
 To reproduce the analysis, clone the repository, open `stroke-transcriptomics-gse16561.Rproj` in RStudio, and knit `code/stroke_biomarker_analysis.Rmd` from beginning to end. Install required packages when prompted. The script locates the project folders, loads or retrieves GEO data and platform annotation, runs the analyses, and exports outputs to `data/` and `figures/`. The committed `sessionInfo()` records the software environment used for the submitted report. Raw caches and large intermediate files are excluded through `.gitignore`; CSV results and figures are retained.
 
 ## 8. References
 
-1. Barrett, T., Wilhite, S. E., Ledoux, P., et al. (2013). NCBI GEO: Archive for functional genomics data sets—update. *Nucleic Acids Research*, 41(D1), D991–D995. https://doi.org/10.1093/nar/gks1193.
+1. Barrett, T., Wilhite, S. E., Ledoux, P., et al. (2013). NCBI GEO: archive for functional genomics data sets—update. *Nucleic Acids Research*, 41(D1), D991–D995. https://doi.org/10.1093/nar/gks1193.
 2. Barr, T. L., Conley, Y., Ding, J., et al. (2010). Genomic biomarkers and cellular pathways of ischemic stroke by RNA gene expression profiling. *Neurology*, 75(11), 1009–1014. https://doi.org/10.1212/WNL.0b013e3181f2b37f.
 3. Davis, S., & Meltzer, P. S. (2007). GEOquery: a bridge between the Gene Expression Omnibus (GEO) and BioConductor. *Bioinformatics*, 23(14), 1846–1847. https://doi.org/10.1093/bioinformatics/btm254.
 4. Ritchie, M. E., Phipson, B., Wu, D., et al. (2015). limma powers differential expression analyses for RNA-sequencing and microarray studies. *Nucleic Acids Research*, 43(7), e47. https://doi.org/10.1093/nar/gkv007.
