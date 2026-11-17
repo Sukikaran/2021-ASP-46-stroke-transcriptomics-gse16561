@@ -647,8 +647,7 @@ tuning_index <- tuning_index + 1
         parameters = best_parameters
       )
 
-      if (
-        length(outer_probabilities) !=
+      if (        length(outer_probabilities) !=
           length(outer_validation_indices) ||
         any(!is.finite(outer_probabilities))
       ) {
@@ -998,3 +997,155 @@ performance_summary <- do.call(
     for (metric in metric_columns) {
       summary_row[[paste0(metric, "_Mean")]] <-
         mean(model_data[[metric]], na.rm = TRUE)
+      summary_row[[paste0(metric, "_SD")]] <-
+        sd(model_data[[metric]], na.rm = TRUE)
+    }
+    summary_row
+  })
+)
+
+rownames(performance_summary) <- NULL
+# --------------------------------------------------
+# Export evaluation results
+# --------------------------------------------------
+performance_file <- file.path(
+  data_dir,
+  "GSE16561_ml_performance_by_repeat.csv"
+)
+
+performance_summary_file <- file.path(
+  data_dir,
+  "GSE16561_ml_performance_summary.csv"
+)
+
+write.csv(
+  performance_by_repeat,
+  performance_file,
+  row.names = FALSE
+)
+
+write.csv(
+  performance_summary,
+  performance_summary_file,
+  row.names = FALSE
+)
+# --------------------------------------------------
+# Generate ROC curves for both repeats
+# --------------------------------------------------
+roc_curve_list <- lapply(
+  evaluation_groups,
+  function(prediction_data) {
+    actual <- prediction_data$Actual
+    probability <- prediction_data$Probability_Stroke
+    thresholds <- c(
+      Inf,
+      sort(unique(probability), decreasing = TRUE),
+      -Inf
+    )
+    data.frame(
+      FPR = vapply(
+        thresholds,
+        function(threshold) {
+          mean(
+            probability[actual == "Control"] >= threshold
+          )
+        },
+        numeric(1)
+      ),
+      TPR = vapply(
+        thresholds,
+        function(threshold) {
+          mean(
+            probability[actual == "Stroke"] >= threshold
+          )
+        },
+        numeric(1)
+      ),
+      Model = prediction_data$Model[1],
+      Repeat = factor(prediction_data$Repeat[1])
+    )
+  }
+)
+
+roc_plot_data <- do.call(
+  rbind,
+  roc_curve_list
+)
+# Create ROC plot
+ml_roc_plot <- ggplot2::ggplot(
+  roc_plot_data,
+  ggplot2::aes(
+    x = FPR,
+    y = TPR,
+    colour = Model,
+    linetype = Repeat,
+    group = interaction(Model, Repeat)
+  )
+) +
+  ggplot2::geom_path(linewidth = 1) +
+  ggplot2::geom_abline(
+    intercept = 0,
+    slope = 1,
+    linetype = "dashed",
+    colour = "grey50"
+  ) +
+  ggplot2::coord_equal() +
+  ggplot2::labs(
+    title = "ROC Curves of Machine Learning Models",
+    subtitle = "Outer repeated stratified five-fold cross-validation",
+    x = "False Positive Rate",
+    y = "True Positive Rate",
+    colour = "Model",
+    linetype = "Repeat"
+  ) +
+  ggplot2::theme_minimal(
+    base_size = 12
+  ) +
+  ggplot2::theme(
+    plot.title = ggplot2::element_text(
+      face = "bold",
+      hjust = 0.5
+    ),
+    plot.subtitle = ggplot2::element_text(
+      hjust = 0.5
+    )
+  )
+# Save ROC figure
+ml_roc_file <- file.path(
+  figure_dir,
+  "fig14_ml_roc_curves.png"
+)
+
+ggplot2::ggsave(
+  filename = ml_roc_file,
+  plot = ml_roc_plot,
+  width = 10,
+  height = 7,
+  dpi = 300,
+  bg = "white"
+)
+# Display evaluation results
+cat("Performance by model and repeat:\n")
+# Round numeric columns without changing the exported full-precision values
+round_numeric_columns <- function(x, digits = 4) {
+  is_numeric <- vapply(x, is.numeric, logical(1))
+  x[is_numeric] <- lapply(x[is_numeric], round, digits = digits)
+  x
+}
+
+print(round_numeric_columns(performance_by_repeat))
+cat("\nMean performance and standard deviation:\n")
+print(round_numeric_columns(performance_summary))
+# Display ROC curves
+knitr::include_graphics(ml_roc_file)
+# Verify evaluation outputs
+evaluation_files <- c(
+  performance_file,
+  performance_summary_file,
+  ml_roc_file
+)
+
+stopifnot(nrow(performance_by_repeat) == 6, nrow(performance_summary) == 3)
+verify_output_files(evaluation_files)
+
+cat("\nMachine learning evaluation completed successfully.\n")
