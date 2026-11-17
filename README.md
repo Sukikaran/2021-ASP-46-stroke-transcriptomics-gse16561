@@ -5,6 +5,14 @@
 **Programme:** BSc (Hons) Computer Science, University of Vavuniya<br>
 **Project type:** Reproducible computational reanalysis of public transcriptomic data
 
+## View the Full Analysis Report
+
+The complete R Markdown analysis, including source code, 
+statistical results, visualisations and machine-learning 
+evaluation, is available as a published HTML report.
+
+**[View the Full Bioinformatics Analysis Report](https://sukikaran.github.io/2021-ASP-46-stroke-transcriptomics-gse16561/)**
+
 ## Abstract
 
 Acute ischemic stroke is associated with changes in gene expression in circulating blood cells. This project reanalyses the public Gene Expression Omnibus (GEO) dataset GSE16561 to identify genes and biological pathways associated with acute ischemic stroke and to evaluate whether blood gene-expression profiles can distinguish stroke cases from healthy controls. The dataset contains 63 whole-blood samples: 39 stroke samples and 24 healthy controls, measured using the Illumina HumanRef-8 v3.0 expression beadchip. After preprocessing and probe annotation, 17,494 unique genes were retained. Differential expression analysis using limma identified 2,779 genes at a Benjamini–Hochberg false discovery rate (FDR) below 0.05. Gene Ontology and KEGG enrichment analyses were performed, and Elastic Net logistic regression, radial-kernel Support Vector Machine and Random Forest classifiers were evaluated using nested repeated cross-validation. The results show substantial transcriptomic differences and promising internal classification performance, but the small sample size and absence of external validation mean that these findings are exploratory rather than evidence of clinical diagnostic readiness.
