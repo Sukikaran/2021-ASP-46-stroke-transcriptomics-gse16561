@@ -146,7 +146,7 @@ To reproduce the analysis, clone the repository, open `stroke-transcriptomics-gs
 
 ## 8. References
 
-1. Barrett, T., Wilhite, S. E., Ledoux, P., et al. (2013). NCBI GEO: archive for functional genomics data sets—update. *Nucleic Acids Research*, 41(D1), D991–D995. [GSE16561 GEO record](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE16561).
+1. Barrett, T., Wilhite, S. E., Ledoux, P., et al. (2013). NCBI GEO: Archive for functional genomics data sets—update. *Nucleic Acids Research*, 41(D1), D991–D995. https://doi.org/10.1093/nar/gks1193.
 2. Barr, T. L., Conley, Y., Ding, J., et al. (2010). Genomic biomarkers and cellular pathways of ischemic stroke by RNA gene expression profiling. *Neurology*, 75(11), 1009–1014. https://doi.org/10.1212/WNL.0b013e3181f2b37f.
 3. Davis, S., & Meltzer, P. S. (2007). GEOquery: a bridge between the Gene Expression Omnibus (GEO) and BioConductor. *Bioinformatics*, 23(14), 1846–1847. https://doi.org/10.1093/bioinformatics/btm254.
 4. Ritchie, M. E., Phipson, B., Wu, D., et al. (2015). limma powers differential expression analyses for RNA-sequencing and microarray studies. *Nucleic Acids Research*, 43(7), e47. https://doi.org/10.1093/nar/gkv007.
