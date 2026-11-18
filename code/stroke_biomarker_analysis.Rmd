@@ -78,7 +78,92 @@ r_script_paths <- file.path(r_script_dir, r_script_files)
 if (any(!file.exists(r_script_paths))) {
   stop("Missing modular R script(s): ", paste(r_script_paths[!file.exists(r_script_paths)], collapse = ", "))
 }
-invisible(lapply(r_script_paths, knitr::read_chunk))
+# Register the scripts that use the standard knitr chunk separators.
+# The machine-learning file is registered explicitly below so both large ML
+# sections are checked for completeness before the report starts executing.
+ml_script_name <- "06_machine_learning.R"
+ml_script_index <- match(ml_script_name, r_script_files)
+
+if (is.na(ml_script_index)) {
+  stop("Machine-learning script is missing from the script list.")
+}
+
+other_r_script_paths <- r_script_paths[-ml_script_index]
+invisible(lapply(other_r_script_paths, knitr::read_chunk))
+
+# Read the ML script and locate its two named sections explicitly.
+ml_script_path <- r_script_paths[ml_script_index]
+ml_script_lines <- readLines(
+  ml_script_path,
+  encoding = "UTF-8",
+  warn = FALSE
+)
+
+ml_chunk_labels <- c(
+  "machine-learning-development",
+  "machine-learning-evaluation"
+)
+
+ml_chunk_markers <- grep(
+  "^## ---- (machine-learning-development|machine-learning-evaluation) ----$",
+  ml_script_lines
+)
+
+if (
+  length(ml_chunk_markers) != 2L ||
+  ml_chunk_markers[1] >= ml_chunk_markers[2]
+) {
+  stop(
+    "Could not identify both machine-learning code sections in: ",
+    ml_script_path
+  )
+}
+
+knitr::read_chunk(
+  path = ml_script_path,
+  lines = ml_script_lines,
+  labels = ml_chunk_labels,
+  from = ml_chunk_markers,
+  to = c(
+    ml_chunk_markers[2] - 1L,
+    length(ml_script_lines)
+  ),
+  from.offset = 1L
+)
+
+# Stop early rather than silently rendering an incomplete ML section.
+loaded_ml_chunk_lengths <- c(
+  development = length(
+    knitr::knit_code$get("machine-learning-development")
+  ),
+  evaluation = length(
+    knitr::knit_code$get("machine-learning-evaluation")
+  )
+)
+
+if (
+  loaded_ml_chunk_lengths["development"] < 800L ||
+  loaded_ml_chunk_lengths["evaluation"] < 200L
+) {
+  stop(
+    paste0(
+      "Machine-learning code was not loaded completely. ",
+      "Loaded lines: development = ",
+      loaded_ml_chunk_lengths["development"],
+      ", evaluation = ",
+      loaded_ml_chunk_lengths["evaluation"],
+      ". Check code/R/06_machine_learning.R and try knitting again."
+    )
+  )
+}
+
+cat(
+  "Machine-learning chunks registered:",
+  loaded_ml_chunk_lengths["development"],
+  "development lines and",
+  loaded_ml_chunk_lengths["evaluation"],
+  "evaluation lines.\\n"
+)
 
 cat("Project root:", project_root, "\n")
 ```
