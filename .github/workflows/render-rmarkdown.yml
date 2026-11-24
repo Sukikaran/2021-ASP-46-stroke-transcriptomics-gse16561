@@ -32,6 +32,11 @@ jobs:
       - name: Set up Pandoc
         uses: r-lib/actions/setup-pandoc@v2
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libuv1-dev
+
       - name: Install CRAN packages
         shell: Rscript {0}
         run: |
@@ -46,6 +51,11 @@ jobs:
               "randomForest"
             ),
             repos = "https://cloud.r-project.org"
+          )
+
+          stopifnot(
+            requireNamespace("rmarkdown", quietly = TRUE),
+            requireNamespace("knitr", quietly = TRUE)
           )
 
       - name: Install Bioconductor packages
