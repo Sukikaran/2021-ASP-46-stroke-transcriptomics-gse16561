@@ -1,0 +1,92 @@
+
+name: Run Stroke Bioinformatics Analysis
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "code/**"
+      - "data/**"
+      - ".github/workflows/render-rmarkdown.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.4.2"
+          use-public-rspm: true
+
+      - name: Set up Pandoc
+        uses: r-lib/actions/setup-pandoc@v2
+
+      - name: Install CRAN packages
+        shell: Rscript {0}
+        run: |
+          install.packages(
+            c(
+              "rmarkdown",
+              "knitr",
+              "ggplot2",
+              "pheatmap",
+              "glmnet",
+              "e1071",
+              "randomForest"
+            ),
+            repos = "https://cloud.r-project.org"
+          )
+
+      - name: Install Bioconductor packages
+        shell: Rscript {0}
+        run: |
+          if (!requireNamespace("BiocManager", quietly = TRUE)) {
+            install.packages(
+              "BiocManager",
+              repos = "https://cloud.r-project.org"
+            )
+          }
+
+          BiocManager::install(
+            c(
+              "GEOquery",
+              "Biobase",
+              "limma",
+              "AnnotationDbi",
+              "org.Hs.eg.db"
+            ),
+            ask = FALSE,
+            update = FALSE,
+            Ncpus = 2
+          )
+
+      - name: Run R Markdown analysis
+        shell: Rscript {0}
+        run: |
+          dir.create("docs", showWarnings = FALSE)
+
+          rmarkdown::render(
+            input = "code/stroke_biomarker_analysis.Rmd",
+            output_file = "index.html",
+            output_dir = "docs",
+            quiet = FALSE
+          )
+
+      - name: Upload generated report
+        uses: actions/upload-artifact@v7
+        with:
+          name: stroke-transcriptomics-report
+          path: docs/index.html
+          if-no-files-found: error
+          retention-days: 14
