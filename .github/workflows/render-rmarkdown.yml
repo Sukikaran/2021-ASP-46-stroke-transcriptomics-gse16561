@@ -74,7 +74,8 @@ jobs:
               "Biobase",
               "limma",
               "AnnotationDbi",
-              "org.Hs.eg.db"
+              "org.Hs.eg.db",
+              "GO.db"
             ),
             ask = FALSE,
             update = FALSE,
